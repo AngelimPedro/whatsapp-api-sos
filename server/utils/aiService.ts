@@ -1,10 +1,98 @@
 import { AGENCY_INFO } from './agencyConfig'
-import { useProdutos } from './useProdutos'
+import { useProdutos, type Produto } from './useProdutos'
 
 interface AIResponse {
   reply: string
   status: 'bot' | 'atendimento_humano' | 'qualificado'
   imageUrl?: string
+}
+
+/**
+ * Busca produtos na API do Bling com base em termos contidos na mensagem do cliente.
+ * Por conta da limitação do Bling em realizar busca de nome apenas por prefixo exato,
+ * buscamos por termos gerais de categoria (como ENCORDOAMENTO) e filtramos os resultados no JS.
+ */
+async function resolveBlingProducts(messageText: string): Promise<Produto[]> {
+  const text = messageText.toLowerCase()
+  const blingQueries: string[] = []
+
+  // Se o texto mencionar algum instrumento ou cordas, buscamos por "ENCORDOAMENTO"
+  const instrumentKeywords = [
+    'baixo', 'guitarra', 'ukulele', 'violino', 'viola', 'cavaquinho', 
+    'bandolim', 'corda', 'encordoamento'
+  ]
+  const hasInstrumentKeyword = instrumentKeywords.some(kw => text.includes(kw))
+
+  if (hasInstrumentKeyword) {
+    blingQueries.push('ENCORDOAMENTO')
+  }
+
+  // Violão é um caso especial: temos violões físicos e encordoamentos
+  if (text.includes('violao') || text.includes('violão')) {
+    blingQueries.push('VIOLAO')
+    if (!blingQueries.includes('ENCORDOAMENTO')) {
+      blingQueries.push('ENCORDOAMENTO')
+    }
+  }
+
+  // Outros acessórios/categorias que podem ter produtos com nome iniciando pela palavra
+  if (text.includes('afinador')) blingQueries.push('AFINADOR')
+  if (text.includes('cabo')) blingQueries.push('CABO')
+  if (text.includes('capa') || text.includes('bag')) blingQueries.push('CAPA')
+  if (text.includes('palheta')) blingQueries.push('PALHETA')
+  if (text.includes('suporte')) blingQueries.push('SUPORTE')
+  if (text.includes('tarraxa')) blingQueries.push('TARRAXA')
+
+  // Se nenhuma busca específica foi identificada, faz uma busca padrão
+  if (blingQueries.length === 0) {
+    blingQueries.push('VIOLAO')
+  }
+
+  // Executa as buscas necessárias em paralelo
+  const results = await Promise.all(
+    blingQueries.map(q => useProdutos(q))
+  )
+
+  // Consolida todos os produtos
+  let allProdutos: Produto[] = []
+  for (const res of results) {
+    if (res?.data) {
+      allProdutos.push(...res.data)
+    }
+  }
+
+  // Remove duplicatas de ID (caso o mesmo produto venha de buscas diferentes)
+  const uniqueMap = new Map<number, Produto>()
+  for (const p of allProdutos) {
+    uniqueMap.set(p.id, p)
+  }
+  allProdutos = Array.from(uniqueMap.values())
+
+  // Refina e filtra no Javascript de acordo com os termos que o cliente buscou
+  if (text.includes('baixo')) {
+    allProdutos = allProdutos.filter(p => p.nome.toLowerCase().includes('baixo'))
+  } else if (text.includes('guitarra')) {
+    allProdutos = allProdutos.filter(p => p.nome.toLowerCase().includes('guitarra'))
+  } else if (text.includes('ukulele')) {
+    allProdutos = allProdutos.filter(p => p.nome.toLowerCase().includes('ukulele'))
+  } else if (text.includes('violino')) {
+    allProdutos = allProdutos.filter(p => p.nome.toLowerCase().includes('violino'))
+  } else if (text.includes('viola')) {
+    // Garante que "viola" não filtre também "violão"/"violao" acidentalmente
+    allProdutos = allProdutos.filter(p => 
+      p.nome.toLowerCase().includes('viola') && 
+      !p.nome.toLowerCase().includes('violao') && 
+      !p.nome.toLowerCase().includes('violão')
+    )
+  } else if (text.includes('cavaquinho')) {
+    allProdutos = allProdutos.filter(p => p.nome.toLowerCase().includes('cavaquinho'))
+  } else if (text.includes('bandolim')) {
+    allProdutos = allProdutos.filter(p => p.nome.toLowerCase().includes('bandolim'))
+  } else if (text.includes('violao') || text.includes('violão')) {
+    allProdutos = allProdutos.filter(p => p.nome.toLowerCase().includes('violao') || p.nome.toLowerCase().includes('violão'))
+  }
+
+  return allProdutos
 }
 
 /**
@@ -27,25 +115,7 @@ export async function getAIResponse(
     }
   }
 
-  // Extrai palavras-chave simples da mensagem para pesquisar produtos específicos no Bling
-  let query = 'VIOLAO'
-  const text = latestMessage.toLowerCase()
-  if (text.includes('guitarra')) query = 'GUITARRA'
-  else if (text.includes('baixo')) query = 'BAIXO'
-  else if (text.includes('afinador')) query = 'AFINADOR'
-  else if (text.includes('cabo')) query = 'CABO'
-  else if (text.includes('capa') || text.includes('bag')) query = 'CAPA'
-  else if (text.includes('cavaquinho')) query = 'CAVAQUINHO'
-  else if (text.includes('bandolim')) query = 'BANDOLIM'
-  else if (text.includes('palheta')) query = 'PALHETA'
-  else if (text.includes('suporte')) query = 'SUPORTE'
-  else if (text.includes('tarraxa')) query = 'TARRAXA'
-  else if (text.includes('ukulele')) query = 'UKULELE'
-  else if (text.includes('violino')) query = 'VIOLINO'
-  else if (text.includes('viola')) query = 'VIOLA'
-
-  const result = await useProdutos(query)
-  const produtos = result?.data || []
+  const produtos = await resolveBlingProducts(latestMessage)
 
   // Constrói a descrição detalhada dos produtos em destaque para injetar no prompt
   const produtosTxt = produtos.map(p => 
