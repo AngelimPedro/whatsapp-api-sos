@@ -2,7 +2,6 @@
 const icons = useIcons()
 
 const dark = ref(true)
-const filtro = ref('Favoritas')
 
 // store Pinia: cacheia conversas e mensagens (volta instantânea, sem refetch)
 const chat = useChatStore()
@@ -41,10 +40,8 @@ function enviarMensagem(text: string) {
     <AreaConversas
       :conversas="conversas"
       :active-id="activeId"
-      :filtro="filtro"
       :has-more="hasMoreConversas"
       @select="chat.selectConversa($event)"
-      @filtro="filtro = $event"
       @load-more="chat.loadMoreConversas()"
     />
 
