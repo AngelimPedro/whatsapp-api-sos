@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import type { Aba, AbaKey } from '~/types/chat'
+
+defineProps<{ abas: Aba[]; aba: AbaKey }>()
+defineEmits<{ aba: [value: AbaKey] }>()
+
 const icons = useIcons()
 </script>
 
@@ -19,8 +24,36 @@ const icons = useIcons()
       </div>
     </div>
 
+    <!-- abas de status -->
+    <div
+      class="flex items-stretch px-2 border-b border-panel-divider overflow-x-auto [&::-webkit-scrollbar]:hidden"
+    >
+      <button
+        v-for="t in abas"
+        :key="t.key"
+        class="relative flex items-center gap-1.5 px-2.5 py-3 text-[13px] font-medium whitespace-nowrap cursor-pointer transition-colors"
+        :class="
+          t.key === aba
+            ? 'text-brand-green'
+            : 'text-text-secondary hover:text-text-primary'
+        "
+        @click="$emit('aba', t.key)"
+      >
+        {{ t.label }}
+        <!-- contagem só na aba ativa (como na referência) -->
+        <span
+          v-if="t.key === aba"
+          class="min-w-5 h-5 px-1.5 grid place-items-center rounded-full text-[11px] font-semibold leading-none bg-chip-active-bg text-chip-active-text"
+        >
+          {{ t.count }}
+        </span>
+        <!-- indicador da aba ativa -->
+        <span class="absolute left-2 right-2 -bottom-px h-0.5 rounded-full bg-brand-green" v-if="t.key === aba" />
+      </button>
+    </div>
+
     <!-- busca -->
-    <div class="px-3 pt-1 pb-2">
+    <div class="px-3 pt-2.5 pb-2">
       <div class="flex items-center gap-3.5 bg-search-bg rounded-lg px-4 py-2">
         <span class="text-text-secondary shrink-0 [&_svg]:w-4.5 [&_svg]:h-4.5" v-html="icons.search" />
         <input

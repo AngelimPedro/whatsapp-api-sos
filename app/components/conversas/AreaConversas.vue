@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import type { Conversa } from '~/types/chat'
+import type { Aba, AbaKey, Conversa } from '~/types/chat'
 
-defineProps<{ conversas: Conversa[]; activeId: string; hasMore?: boolean }>()
-defineEmits<{ select: [id: string]; loadMore: [] }>()
+defineProps<{ conversas: Conversa[]; activeId: string; abas: Aba[]; aba: AbaKey; hasMore?: boolean }>()
+defineEmits<{ select: [id: string]; aba: [value: AbaKey]; loadMore: [] }>()
 </script>
 
 <template>
   <div
     class="flex flex-col bg-panel-left border-r border-panel-divider min-w-0 h-screen overflow-hidden"
   >
-    <HeaderConversa />
+    <HeaderConversa :abas="abas" :aba="aba" @aba="$emit('aba', $event)" />
     <ListaConversa
       :conversas="conversas"
       :active-id="activeId"

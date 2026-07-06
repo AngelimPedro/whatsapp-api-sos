@@ -25,6 +25,15 @@ export interface Peer {
   img?: string
 }
 
+/** Abas de filtro da lista de conversas (por status) */
+export type AbaKey = 'entrada' | 'qualificado' | 'atendimento_humano' | 'desqualificado'
+
+export interface Aba {
+  key: AbaKey
+  label: string
+  count: number
+}
+
 /** Divisor de data no fluxo de mensagens */
 export interface MensagemData {
   type: 'date'

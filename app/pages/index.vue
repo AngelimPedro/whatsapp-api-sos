@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AbaKey } from '~/types/chat'
+
 const icons = useIcons()
 
 const dark = ref(true)
@@ -19,6 +21,25 @@ onMounted(() => {
 })
 onMounted(chat.loadConversas)
 
+/* ---------- abas por status da conversa ---------- */
+const aba = ref<AbaKey>('entrada')
+
+// "Entrada" = conversas ainda com o bot (status 'bot' ou ainda sem status)
+const naEntrada = (c: (typeof conversas.value)[number]) => !c.status || c.status === 'bot'
+
+const abas = computed(() => [
+  { key: 'entrada' as AbaKey, label: 'Entrada', count: conversas.value.filter(naEntrada).length },
+  { key: 'qualificado' as AbaKey, label: 'Qualificados', count: conversas.value.filter((c) => c.status === 'qualificado').length },
+  { key: 'atendimento_humano' as AbaKey, label: 'Humano', count: conversas.value.filter((c) => c.status === 'atendimento_humano').length },
+  { key: 'desqualificado' as AbaKey, label: 'Desqualificados', count: conversas.value.filter((c) => c.status === 'desqualificado').length },
+])
+
+const conversasFiltradas = computed(() =>
+  aba.value === 'entrada'
+    ? conversas.value.filter(naEntrada)
+    : conversas.value.filter((c) => c.status === aba.value),
+)
+
 const activePeer = computed(() => {
   const c = conversas.value.find((x) => x.id === activeId.value)
   return { name: c?.name ?? '', img: c?.img }
@@ -38,10 +59,13 @@ function enviarMensagem(text: string) {
 <template>
   <div class="grid grid-cols-[420px_1fr] h-screen bg-bg-app">
     <AreaConversas
-      :conversas="conversas"
+      :conversas="conversasFiltradas"
       :active-id="activeId"
+      :abas="abas"
+      :aba="aba"
       :has-more="hasMoreConversas"
       @select="chat.selectConversa($event)"
+      @aba="aba = $event"
       @load-more="chat.loadMoreConversas()"
     />
 
