@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<!--
+  REFERÊNCIA DE DESIGN (protótipo inicial feito pelo designer).
+  Single-file Vue 3 via CDN — serve só como referência visual do layout.
+  A app real foi reimplementada em Nuxt 4 + Tailwind (ver app/).
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WhatsApp Web — Vue (referência)</title>
+<style>
+  /* ============================================================
+     THEME TOKENS
+     ============================================================ */
+  :root {
+    --bg-app: #ffffff;
+    --panel-left: #ffffff;
+    --panel-divider: #e9edef;
+    --header-bg: #ffffff;
+    --search-bg: #f0f2f5;
+    --chip-border: #d1d7db;
+    --chip-text: #54656f;
+    --chip-active-bg: #c6f6d5;
+    --chip-active-text: #1f7a47;
+    --brand-green: #1fa855;
+    --brand-green-strong: #009688;
+    --text-primary: #111b21;
+    --text-secondary: #667781;
+    --text-tertiary: #8696a0;
+    --hover-row: #f5f6f6;
+    --active-row: #f0f2f5;
+    --icon: #54656f;
+    --chat-bg: #efe7de;
+    --chat-pattern: 0.06;
+    --bubble-in: #ffffff;
+    --bubble-shadow: rgba(11,20,26,0.13);
+    --bubble-text: #111b21;
+    --bubble-meta: #667781;
+    --bubble-border-top: #e9edef;
+    --btn-link: #1da851;
+    --date-pill-bg: #ffffff;
+    --date-pill-text: #54656f;
+    --input-bar-bg: #ffffff;
+    --input-field-bg: #ffffff;
+    --footer-note: #8696a0;
+    --link: #027eb5;
+    --scroll-thumb: rgba(0,0,0,0.2);
+  }
+  html[data-theme="dark"] {
+    --bg-app: #0b141a;
+    --panel-left: #111b21;
+    --panel-divider: #2a3942;
+    --header-bg: #202c33;
+    --search-bg: #202c33;
+    --chip-border: #2a3942;
+    --chip-text: #aebac1;
+    --chip-active-bg: #103529;
+    --chip-active-text: #00a884;
+    --brand-green: #00a884;
+    --brand-green-strong: #00a884;
+    --text-primary: #e9edef;
+    --text-secondary: #8696a0;
+    --text-tertiary: #8696a0;
+    --hover-row: #202c33;
+    --active-row: #2a3942;
+    --icon: #aebac1;
+    --chat-bg: #0b141a;
+    --chat-pattern: 0.04;
+    --bubble-in: #202c33;
+    --bubble-shadow: rgba(0,0,0,0.3);
+    --bubble-text: #e9edef;
+    --bubble-meta: #8696a0;
+    --bubble-border-top: #2a3942;
+    --btn-link: #00a884;
+    --date-pill-bg: #182229;
+    --date-pill-text: #8696a0;
+    --input-bar-bg: #202c33;
+    --input-field-bg: #2a3942;
+    --footer-note: #8696a0;
+    --link: #53bdeb;
+    --scroll-thumb: rgba(255,255,255,0.16);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    overflow: hidden;
+  }
+  #app { height: 100vh; }
+
+  .wa-shell {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    height: 100vh;
+    background: var(--bg-app);
+  }
+
+  .scroll::-webkit-scrollbar { width: 6px; }
+  .scroll::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
+  .scroll::-webkit-scrollbar-track { background: transparent; }
+
+  /* ---------- LEFT: AreaConversas ---------- */
+  .area-conversas {
+    display: flex; flex-direction: column;
+    background: var(--panel-left);
+    border-right: 1px solid var(--panel-divider);
+    min-width: 0; height: 100vh; overflow: hidden;
+  }
+  .header-conversa {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px 14px; background: var(--header-bg);
+  }
+  .header-conversa h1 { font-size: 22px; font-weight: 700; color: var(--brand-green); letter-spacing: -0.2px; }
+  .header-actions { display: flex; align-items: center; gap: 6px; }
+  .icon-btn {
+    width: 40px; height: 40px; display: grid; place-items: center;
+    border-radius: 50%; border: none; background: transparent;
+    color: var(--icon); cursor: pointer; transition: background .15s;
+  }
+  .icon-btn:hover { background: var(--hover-row); }
+  .icon-btn svg { width: 22px; height: 22px; }
+
+  .search-wrap { padding: 0 12px 8px; }
+  .search-box { display: flex; align-items: center; gap: 14px; background: var(--search-bg); border-radius: 8px; padding: 8px 16px; }
+  .search-box svg { width: 18px; height: 18px; color: var(--text-secondary); flex: none; }
+  .search-box input { border: none; background: transparent; outline: none; color: var(--text-primary); font-size: 15px; width: 100%; }
+  .search-box input::placeholder { color: var(--text-secondary); }
+
+  .chips { display: flex; align-items: center; gap: 8px; padding: 6px 14px 12px; }
+  .chip {
+    border: 1px solid var(--chip-border); background: transparent; color: var(--chip-text);
+    font-size: 14px; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+    white-space: nowrap; transition: background .15s, color .15s;
+  }
+  .chip:hover { background: var(--hover-row); }
+  .chip.active { background: var(--chip-active-bg); color: var(--chip-active-text); border-color: transparent; }
+  .chip.round { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; }
+  .chip.round svg { width: 16px; height: 16px; }
+
+  .lista-conversa { flex: 1; overflow-y: auto; }
+
+  .conversa-item { display: flex; align-items: center; gap: 14px; padding: 10px 14px; cursor: pointer; transition: background .12s; }
+  .conversa-item:hover { background: var(--hover-row); }
+  .conversa-item.active { background: var(--active-row); }
+  .avatar {
+    width: 50px; height: 50px; border-radius: 50%; flex: none; overflow: hidden;
+    display: grid; place-items: center; background: #d9f0e3; color: #6b7c84;
+  }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .avatar svg { width: 30px; height: 30px; }
+  .conversa-body { flex: 1; min-width: 0; border-top: 1px solid transparent; }
+  .conversa-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .conversa-name { font-size: 16px; color: var(--text-primary); font-weight: 400; }
+  .conversa-time { font-size: 12px; color: var(--text-secondary); flex: none; }
+  .conversa-preview {
+    display: flex; align-items: center; gap: 3px; font-size: 14px; color: var(--text-secondary);
+    margin-top: 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .conversa-preview .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .check { color: #53bdeb; flex: none; display: inline-flex; }
+  .check svg { width: 16px; height: 16px; }
+
+  .enc-note { text-align: center; font-size: 12.5px; color: var(--footer-note); padding: 18px 40px 22px; line-height: 1.5; border-top: 1px solid var(--panel-divider); }
+  .enc-note .lock { vertical-align: -2px; margin-right: 3px; }
+  .enc-note a { color: var(--brand-green); text-decoration: none; font-weight: 500; }
+
+  /* ---------- RIGHT: AreaMensagens ---------- */
+  .area-mensagens {
+    display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative;
+    background: var(--chat-bg); height: 100vh; overflow: hidden;
+  }
+  .header-mensagens {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 18px; background: var(--header-bg); border-left: 1px solid var(--panel-divider); z-index: 3;
+  }
+  .header-mensagens .peer { display: flex; align-items: center; gap: 14px; }
+  .header-mensagens .peer .name { font-size: 16px; font-weight: 500; color: var(--text-primary); }
+  .header-mensagens .avatar { width: 42px; height: 42px; }
+  .header-mensagens .avatar svg { width: 26px; height: 26px; }
+
+  .lista-mensagens { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 64px 96px; position: relative; }
+  .chat-bg-pattern {
+    position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cg fill='none' stroke='%23000' stroke-width='1.4' opacity='0.5'%3E%3Ccircle cx='60' cy='60' r='14'/%3E%3Cpath d='M150 40 l20 0 0 26 -20 0z'/%3E%3Cpath d='M260 70 q14 -20 28 0'/%3E%3Cpath d='M330 50 l14 14 -14 14 -14 -14z'/%3E%3Cpath d='M40 170 h28 M54 156 v28'/%3E%3Ccircle cx='160' cy='180' r='12'/%3E%3Cpath d='M250 160 l24 0 0 24 -24 0z'/%3E%3Cpath d='M330 190 q14 -18 28 0'/%3E%3Cpath d='M60 290 q16 -22 30 0'/%3E%3Cpath d='M150 280 l16 16 -16 16 -16 -16z'/%3E%3Ccircle cx='270' cy='300' r='13'/%3E%3Cpath d='M340 290 h26 M353 277 v26'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 380px; opacity: var(--chat-pattern); pointer-events: none; z-index: 0;
+  }
+  .msg-stream { position: relative; z-index: 1; max-width: 820px; margin: 0 auto; }
+
+  .date-divider { display: flex; justify-content: center; margin: 14px 0; }
+  .date-pill { background: var(--date-pill-bg); color: var(--date-pill-text); font-size: 12.5px; font-weight: 500; padding: 6px 14px; border-radius: 8px; box-shadow: 0 1px 1px var(--bubble-shadow); }
+
+  .msg-row { display: flex; margin-bottom: 10px; position: relative; }
+  .msg-row.in { justify-content: flex-start; }
+  .bubble { background: var(--bubble-in); color: var(--bubble-text); border-radius: 0 8px 8px 8px; box-shadow: 0 1px 1px var(--bubble-shadow); max-width: 480px; overflow: hidden; }
+  .bubble .media { width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block; }
+  .bubble .pad { padding: 8px 9px 6px 11px; }
+  .bubble .b-head { font-weight: 600; font-size: 14.5px; margin-bottom: 4px; }
+  .bubble .b-body { font-size: 14.2px; line-height: 1.4; }
+  .bubble .b-sub { font-size: 13px; color: var(--bubble-meta); margin-top: 6px; }
+  .bubble .b-meta { text-align: right; font-size: 11px; color: var(--bubble-meta); margin-top: 2px; }
+  .bubble .b-foot { border-top: 1px solid var(--bubble-border-top); display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px; color: var(--btn-link); font-size: 14.5px; font-weight: 500; cursor: pointer; }
+  .bubble .b-foot svg { width: 16px; height: 16px; }
+  .reply-btns { display: flex; flex-direction: column; gap: 0; }
+  .reply-btn { border-top: 1px solid var(--bubble-border-top); background: transparent; color: var(--btn-link); font-size: 14.5px; font-weight: 500; padding: 10px; cursor: pointer; text-align: center; transition: background .12s; }
+  .reply-btn:hover { background: var(--hover-row); }
+
+  .info-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--bubble-in); box-shadow: 0 1px 1px var(--bubble-shadow); display: grid; place-items: center; align-self: flex-end; margin: 0 0 6px 8px; color: var(--bubble-meta); flex: none; }
+  .info-dot svg { width: 16px; height: 16px; }
+  .msg-row .side-actions { display: flex; align-items: flex-end; gap: 6px; }
+
+  .chat-input { position: absolute; left: 0; right: 0; bottom: 14px; display: flex; justify-content: center; padding: 0 24px; z-index: 5; }
+  .chat-input .bar { width: 100%; display: flex; align-items: center; gap: 10px; background: var(--input-bar-bg); border-radius: 26px; box-shadow: 0 2px 10px rgba(11,20,26,0.16); padding: 6px 10px; }
+  .chat-input .field { flex: 1; background: var(--input-field-bg); border: none; outline: none; color: var(--text-primary); font-size: 15px; padding: 11px 6px; }
+  .chat-input .field::placeholder { color: var(--text-secondary); }
+  .chat-input .icon-btn:hover { background: var(--hover-row); }
+
+  .theme-toggle { position: fixed; bottom: 16px; left: 16px; z-index: 50; display: flex; align-items: center; gap: 8px; background: var(--header-bg); border: 1px solid var(--panel-divider); color: var(--icon); padding: 8px 12px; border-radius: 999px; cursor: pointer; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+  .theme-toggle svg { width: 16px; height: 16px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="wa-shell">
+    <area-conversas
+      :conversas="conversas"
+      :active-id="activeId"
+      :filtro="filtro"
+      @select="activeId = $event"
+      @filtro="filtro = $event"
+    ></area-conversas>
+
+    <area-mensagens :peer="activePeer" :mensagens="mensagens"></area-mensagens>
+  </div>
+
+  <button class="theme-toggle" @click="toggleTheme">
+    <span v-html="dark ? icons.sun : icons.moon"></span>
+    {{ dark ? 'Modo claro' : 'Modo escuro' }}
+  </button>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script>
+const icons = {
+  newChat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><rect x="3" y="6" width="13" height="13" rx="2"/><path d="M21 3l-7 7"/></svg>',
+  menu: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>',
+  person: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
+  doubleCheck: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 9l4 4 8-9"/><path d="M6 11l1 1 8-9"/></svg>',
+  lock: '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm-3 8V6a3 3 0 1 1 6 0v3z"/></svg>',
+  external: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3h7v7"/><path d="M21 3l-9 9"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>',
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+  emoji: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  sticker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v10l-6 6H4z"/><path d="M20 14h-6v6"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'
+};
+
+/* ============ LEFT COMPONENTS ============ */
+const ConversaItem = {
+  props: ['conversa', 'active'], inject: ['icons'], emits: ['select'],
+  template: `
+    <div class="conversa-item" :class="{active}" @click="$emit('select', conversa.id)">
+      <div class="avatar" :style="conversa.color ? {background: conversa.color, color:'#fff'} : null">
+        <img v-if="conversa.img" :src="conversa.img" alt="" />
+        <span v-else-if="conversa.initials">{{ conversa.initials }}</span>
+        <span v-else v-html="icons.person"></span>
+      </div>
+      <div class="conversa-body">
+        <div class="conversa-top">
+          <span class="conversa-name">{{ conversa.name }}</span>
+          <span class="conversa-time">{{ conversa.time }}</span>
+        </div>
+        <div class="conversa-preview">
+          <span v-if="conversa.sent" class="check" v-html="icons.doubleCheck"></span>
+          <span class="txt">{{ conversa.preview }}</span>
+        </div>
+      </div>
+    </div>`
+};
+
+const ListaConversa = {
+  components: { ConversaItem }, props: ['conversas', 'activeId'], inject: ['icons'], emits: ['select'],
+  template: `
+    <div class="lista-conversa scroll">
+      <conversa-item v-for="c in conversas" :key="c.id" :conversa="c" :active="c.id === activeId" @select="$emit('select', $event)"></conversa-item>
+      <div class="enc-note">
+        <span class="lock" v-html="icons.lock"></span>
+        Suas mensagens pessoais são protegidas com a
+        <a href="#" @click.prevent>criptografia de ponta a ponta</a>
+      </div>
+    </div>`
+};
+
+const HeaderConversa = {
+  inject: ['icons'], props: ['filtro'], emits: ['filtro'],
+  data() { return { filtros: ['Tudo', 'Não lidas', 'Favoritas', 'Grupos'] }; },
+  template: `
+    <div>
+      <div class="header-conversa">
+        <h1>WhatsApp</h1>
+        <div class="header-actions">
+          <button class="icon-btn" v-html="icons.newChat"></button>
+          <button class="icon-btn" v-html="icons.menu"></button>
+        </div>
+      </div>
+      <div class="search-wrap">
+        <div class="search-box">
+          <span v-html="icons.search"></span>
+          <input placeholder="Pesquisar conversas favoritas" />
+        </div>
+      </div>
+      <div class="chips">
+        <button v-for="f in filtros" :key="f" class="chip" :class="{active: f===filtro}" @click="$emit('filtro', f)">{{ f }}</button>
+        <button class="chip round" v-html="icons.chevron"></button>
+      </div>
+    </div>`
+};
+
+const AreaConversas = {
+  components: { HeaderConversa, ListaConversa }, props: ['conversas', 'activeId', 'filtro'], emits: ['select', 'filtro'],
+  template: `
+    <div class="area-conversas">
+      <header-conversa :filtro="filtro" @filtro="$emit('filtro', $event)"></header-conversa>
+      <lista-conversa :conversas="conversas" :active-id="activeId" @select="$emit('select', $event)"></lista-conversa>
+    </div>`
+};
+
+/* ============ RIGHT COMPONENTS ============ */
+const HeaderMensagens = {
+  inject: ['icons'], props: ['peer'],
+  template: `
+    <div class="header-mensagens">
+      <div class="peer">
+        <div class="avatar">
+          <img v-if="peer.img" :src="peer.img" alt="" />
+          <span v-else v-html="icons.person"></span>
+        </div>
+        <span class="name">{{ peer.name }}</span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" v-html="icons.search"></button>
+        <button class="icon-btn" v-html="icons.menu"></button>
+      </div>
+    </div>`
+};
+
+const ItemMensagem = {
+  inject: ['icons'], props: ['msg'],
+  template: `
+    <div class="msg-row in">
+      <div class="bubble">
+        <img v-if="msg.media" class="media" :src="msg.media" alt="" />
+        <div class="pad">
+          <div v-if="msg.head" class="b-head">{{ msg.head }}</div>
+          <div class="b-body" v-html="msg.body"></div>
+          <div v-if="msg.sub" class="b-sub">{{ msg.sub }}</div>
+          <div class="b-meta">{{ msg.time }}</div>
+        </div>
+        <div v-if="msg.foot" class="b-foot"><span v-html="icons.external"></span> {{ msg.foot }}</div>
+        <div v-if="msg.buttons" class="reply-btns">
+          <button v-for="b in msg.buttons" :key="b" class="reply-btn">{{ b }}</button>
+        </div>
+      </div>
+      <div class="side-actions">
+        <div v-if="msg.info" class="info-dot" v-html="icons.info"></div>
+        <div v-if="msg.emoji" class="info-dot" v-html="icons.emoji"></div>
+      </div>
+    </div>`
+};
+
+const ChatInput = {
+  inject: ['icons'], data() { return { text: '' }; },
+  template: `
+    <div class="chat-input">
+      <div class="bar">
+        <button class="icon-btn" v-html="icons.plus"></button>
+        <button class="icon-btn" v-html="icons.sticker"></button>
+        <input class="field" v-model="text" placeholder="Digite uma mensagem" />
+        <button class="icon-btn" v-html="icons.mic"></button>
+      </div>
+    </div>`
+};
+
+const ListaMensagens = {
+  components: { ItemMensagem }, props: ['mensagens'],
+  template: `
+    <div class="lista-mensagens scroll">
+      <div class="chat-bg-pattern"></div>
+      <div class="msg-stream">
+        <template v-for="(m, i) in mensagens" :key="i">
+          <div v-if="m.type==='date'" class="date-divider"><span class="date-pill">{{ m.label }}</span></div>
+          <item-mensagem v-else :msg="m"></item-mensagem>
+        </template>
+      </div>
+    </div>`
+};
+
+const AreaMensagens = {
+  components: { HeaderMensagens, ListaMensagens, ChatInput }, props: ['peer', 'mensagens'],
+  template: `
+    <div class="area-mensagens">
+      <header-mensagens :peer="peer"></header-mensagens>
+      <lista-mensagens :mensagens="mensagens"></lista-mensagens>
+      <chat-input></chat-input>
+    </div>`
+};
+
+/* ============ ROOT ============ */
+const burger = "data:image/svg+xml," + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="300"><rect width="480" height="300" fill="#caa46a"/><ellipse cx="240" cy="120" rx="180" ry="60" fill="#e8c98a"/><rect x="60" y="150" width="360" height="40" rx="14" fill="#7a4a28"/><ellipse cx="240" cy="210" rx="180" ry="55" fill="#e8c98a"/><rect x="40" y="250" width="400" height="22" rx="8" fill="#ffffff"/></svg>'
+);
+
+const App = {
+  components: { AreaConversas, AreaMensagens },
+  data() {
+    return {
+      dark: false, icons, filtro: 'Favoritas', activeId: 't1',
+      conversas: [
+        { id: 't1', name: 'Test Number', time: 'segunda-feira', preview: 'Lembrete de Consulta…' },
+        { id: 'sp', name: 'Sem Parar', time: '07/06/2026', preview: 'Olá, você está no…', color: '#1f2d3d', initials: 'SP' },
+        { id: 'datafy', name: 'Datafy', time: '06/04/2026', preview: 'Ola', color: '#f4a7c0', initials: '' }
+      ],
+      mensagens: []
+    };
+  },
+  created() {
+    this.mensagens = [
+      { type: 'msg', media: burger, body: 'Olá, Israel, aproveite a nova promoção do X-Salada com 10% de desconto.', sub: 'Promoção até o fim do mês', foot: 'Visit website', time: '22:32' },
+      { type: 'msg', head: 'Confirmar Consulta', body: 'Olá, Israel, sua consulta é amanhã. Deseja confirmar?', sub: 'Clínica Saúde', time: '22:42', buttons: ['SIM', 'Cancelar'], info: true },
+      { type: 'date', label: 'segunda-feira' },
+      { type: 'msg', head: 'Lembrete de Consulta', body: 'Olá Israel, sua consulta está agendada para amanhã. Deseja confirmar seu atendimento?', sub: 'Responda usando um dos botões abaixo.', time: '09:27', buttons: ['Confirmar', 'Cancelar', 'Reagendar'], info: true, emoji: true }
+    ];
+  },
+  computed: {
+    activePeer() {
+      const c = this.conversas.find(x => x.id === this.activeId) || this.conversas[0];
+      return { name: c.name, img: c.img };
+    }
+  },
+  methods: {
+    toggleTheme() {
+      this.dark = !this.dark;
+      document.documentElement.setAttribute('data-theme', this.dark ? 'dark' : 'light');
+    }
+  }
+};
+
+const app = Vue.createApp(App);
+app.provide('icons', icons);
+app.mount('#app');
+</script>
+</body>
+</html>

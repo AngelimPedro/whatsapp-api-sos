@@ -1,0 +1,170 @@
+@import 'tailwindcss';
+
+/* ============================================================
+   DARK MODE — ativado pelo atributo [data-theme="dark"] no <html>
+   ============================================================ */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* ============================================================
+   THEME TOKENS (claro/escuro) — variáveis CSS trocadas por tema.
+   Como o @theme inline aponta para essas vars, as classes
+   utilitárias (bg-panel-left, text-text-primary, ...) trocam
+   de cor automaticamente quando [data-theme="dark"] muda.
+   ============================================================ */
+:root {
+  --bg-app: #ffffff;
+  --panel-left: #ffffff;
+  --panel-divider: #e9edef;
+  --header-bg: #ffffff;
+  --search-bg: #f0f2f5;
+  --chip-border: #d1d7db;
+  --chip-text: #54656f;
+  --chip-active-bg: #c6f6d5;
+  --chip-active-text: #1f7a47;
+  --brand-green: #1fa855;
+  --brand-green-strong: #009688;
+  --text-primary: #111b21;
+  --text-secondary: #667781;
+  --text-tertiary: #8696a0;
+  --hover-row: #f5f6f6;
+  --active-row: #f0f2f5;
+  --icon: #54656f;
+  --chat-bg: #efe7de;
+  --chat-pattern: 0.06;
+  --bubble-in: #ffffff;
+  --bubble-out: #d9fdd3;
+  --bubble-out-text: #111b21;
+  --bubble-shadow: rgba(11, 20, 26, 0.13);
+  --bubble-text: #111b21;
+  --bubble-meta: #667781;
+  --bubble-border-top: #e9edef;
+  --btn-link: #1da851;
+  --date-pill-bg: #ffffff;
+  --date-pill-text: #54656f;
+  --input-bar-bg: #ffffff;
+  --input-field-bg: #ffffff;
+  --footer-note: #8696a0;
+  --link: #027eb5;
+  --check: #53bdeb;
+  --scroll-thumb: rgba(0, 0, 0, 0.2);
+}
+
+html[data-theme='dark'] {
+  --bg-app: #0b141a;
+  --panel-left: #111b21;
+  --panel-divider: #2a3942;
+  --header-bg: #202c33;
+  --search-bg: #202c33;
+  --chip-border: #2a3942;
+  --chip-text: #aebac1;
+  --chip-active-bg: #103529;
+  --chip-active-text: #00a884;
+  --brand-green: #00a884;
+  --brand-green-strong: #00a884;
+  --text-primary: #e9edef;
+  --text-secondary: #8696a0;
+  --text-tertiary: #8696a0;
+  --hover-row: #202c33;
+  --active-row: #2a3942;
+  --icon: #aebac1;
+  --chat-bg: #0b141a;
+  --chat-pattern: 0.04;
+  --bubble-in: #202c33;
+  --bubble-out: #005c4b;
+  --bubble-out-text: #e9edef;
+  --bubble-shadow: rgba(0, 0, 0, 0.3);
+  --bubble-text: #e9edef;
+  --bubble-meta: #8696a0;
+  --bubble-border-top: #2a3942;
+  --btn-link: #00a884;
+  --date-pill-bg: #182229;
+  --date-pill-text: #8696a0;
+  --input-bar-bg: #202c33;
+  --input-field-bg: #2a3942;
+  --footer-note: #8696a0;
+  --link: #53bdeb;
+  --check: #53bdeb;
+  --scroll-thumb: rgba(255, 255, 255, 0.16);
+}
+
+/* ============================================================
+   Mapeia os tokens para o tema do Tailwind (CSS-first).
+   "inline" => as utilitárias resolvem para var() no uso,
+   então o dark mode funciona sem recompilar.
+   ============================================================ */
+@theme inline {
+  --color-bg-app: var(--bg-app);
+  --color-panel-left: var(--panel-left);
+  --color-panel-divider: var(--panel-divider);
+  --color-header-bg: var(--header-bg);
+  --color-search-bg: var(--search-bg);
+  --color-chip-border: var(--chip-border);
+  --color-chip-text: var(--chip-text);
+  --color-chip-active-bg: var(--chip-active-bg);
+  --color-chip-active-text: var(--chip-active-text);
+  --color-brand-green: var(--brand-green);
+  --color-brand-green-strong: var(--brand-green-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-hover-row: var(--hover-row);
+  --color-active-row: var(--active-row);
+  --color-icon: var(--icon);
+  --color-chat-bg: var(--chat-bg);
+  --color-bubble-in: var(--bubble-in);
+  --color-bubble-out: var(--bubble-out);
+  --color-bubble-out-text: var(--bubble-out-text);
+  --color-bubble-text: var(--bubble-text);
+  --color-bubble-meta: var(--bubble-meta);
+  --color-bubble-border-top: var(--bubble-border-top);
+  --color-btn-link: var(--btn-link);
+  --color-date-pill-bg: var(--date-pill-bg);
+  --color-date-pill-text: var(--date-pill-text);
+  --color-input-bar-bg: var(--input-bar-bg);
+  --color-input-field-bg: var(--input-field-bg);
+  --color-footer-note: var(--footer-note);
+  --color-link: var(--link);
+  --color-check: var(--check);
+}
+
+/* ============================================================
+   Base + utilitários que não valem a pena virar classe
+   ============================================================ */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+/* scrollbar fina (usar a classe .scroll nos contêineres roláveis) */
+.scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.scroll::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 3px;
+}
+.scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* padrão de fundo do chat (SVG) — opacidade controlada pelo token */
+.chat-bg-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cg fill='none' stroke='%23000' stroke-width='1.4' opacity='0.5'%3E%3Ccircle cx='60' cy='60' r='14'/%3E%3Cpath d='M150 40 l20 0 0 26 -20 0z'/%3E%3Cpath d='M260 70 q14 -20 28 0'/%3E%3Cpath d='M330 50 l14 14 -14 14 -14 -14z'/%3E%3Cpath d='M40 170 h28 M54 156 v28'/%3E%3Ccircle cx='160' cy='180' r='12'/%3E%3Cpath d='M250 160 l24 0 0 24 -24 0z'/%3E%3Cpath d='M330 190 q14 -18 28 0'/%3E%3Cpath d='M60 290 q16 -22 30 0'/%3E%3Cpath d='M150 280 l16 16 -16 16 -16 -16z'/%3E%3Ccircle cx='270' cy='300' r='13'/%3E%3Cpath d='M340 290 h26 M353 277 v26'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 380px;
+  opacity: var(--chat-pattern);
+}
+
+/* cantos do balão (formato WhatsApp) */
+.bubble-in {
+  border-radius: 0 8px 8px 8px;
+}
+.bubble-out {
+  border-radius: 8px 0 8px 8px;
+}
