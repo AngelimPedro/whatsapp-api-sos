@@ -68,6 +68,8 @@ onMounted(async () => {
     class="flex-1 min-h-0 overflow-y-auto pt-3.5 px-16 pb-24 relative scroll flex flex-col"
     @scroll.passive="onScroll"
   >
+    <!-- glow vermelho da marca (SOS HUB) -->
+    <div class="absolute inset-0 pointer-events-none z-0 chat-bg-glow" />
     <!-- padrão de fundo -->
     <div class="absolute inset-0 pointer-events-none z-0 chat-bg-pattern" />
 

@@ -11,80 +11,92 @@
    utilitárias (bg-panel-left, text-text-primary, ...) trocam
    de cor automaticamente quando [data-theme="dark"] muda.
    ============================================================ */
+/* ------------------------------------------------------------
+   SOS HUB — tema DARK PREMIUM (padrão).
+   Paleta minimalista/enterprise com vermelho da marca (#E30613).
+   Como não existe regra [data-theme='dark'], o toggle "dark"
+   cai neste :root — e "light" usa a variante premium abaixo.
+   ------------------------------------------------------------ */
 :root {
-  --bg-app: #ffffff;
-  --panel-left: #ffffff;
-  --panel-divider: #e9edef;
-  --header-bg: #ffffff;
-  --search-bg: #f0f2f5;
-  --chip-border: #d1d7db;
-  --chip-text: #54656f;
-  --chip-active-bg: #c6f6d5;
-  --chip-active-text: #1f7a47;
-  --brand-green: #1fa855;
-  --brand-green-strong: #009688;
-  --text-primary: #111b21;
-  --text-secondary: #667781;
-  --text-tertiary: #8696a0;
-  --hover-row: #f5f6f6;
-  --active-row: #f0f2f5;
-  --icon: #54656f;
-  --chat-bg: #efe7de;
-  --chat-pattern: 0.06;
-  --bubble-in: #ffffff;
-  --bubble-out: #d9fdd3;
-  --bubble-out-text: #111b21;
-  --bubble-shadow: rgba(11, 20, 26, 0.13);
-  --bubble-text: #111b21;
-  --bubble-meta: #667781;
-  --bubble-border-top: #e9edef;
-  --btn-link: #1da851;
-  --date-pill-bg: #ffffff;
-  --date-pill-text: #54656f;
-  --input-bar-bg: #ffffff;
-  --input-field-bg: #ffffff;
-  --footer-note: #8696a0;
-  --link: #027eb5;
-  --check: #53bdeb;
-  --scroll-thumb: rgba(0, 0, 0, 0.2);
+  --bg-app: #050505;
+  --panel-left: #0a0a0a;
+  --panel-divider: rgba(255, 255, 255, 0.06);
+  --header-bg: #0f0f0f;
+  --search-bg: #0f0f0f;
+  --chip-border: #1f1f1f;
+  --chip-text: #a1a1aa;
+  --chip-active-bg: rgba(227, 6, 19, 0.1);
+  --chip-active-text: #ff3b45;
+  /* "brand-green" reaproveitado como vermelho da marca (mantém as classes) */
+  --brand-green: #e30613;
+  --brand-green-strong: #ff202d;
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #71717a;
+  --hover-row: #141414;
+  --active-row: #1a1a1a;
+  --icon: #a1a1aa;
+  --chat-bg: #070707;
+  --chat-pattern: 0.02;
+  --chat-glow: rgba(227, 6, 19, 0.1);
+  --bubble-in: #131313;
+  --bubble-out: #3a1016;
+  --bubble-out-text: #ffffff;
+  --bubble-shadow: rgba(0, 0, 0, 0.35);
+  --bubble-text: #e4e4e7;
+  --bubble-meta: #8a8a93;
+  --bubble-border-top: rgba(255, 255, 255, 0.06);
+  --btn-link: #ff3b45;
+  --date-pill-bg: #101010;
+  --date-pill-text: #a1a1aa;
+  --input-bar-bg: #0c0c0c;
+  --input-field-bg: #0f0f0f;
+  --footer-note: #71717a;
+  --link: #ff3b45;
+  --check: #ff3b45;
+  --scroll-thumb: rgba(255, 255, 255, 0.12);
 }
 
-html[data-theme='dark'] {
-  --bg-app: #0b141a;
-  --panel-left: #111b21;
-  --panel-divider: #2a3942;
-  --header-bg: #202c33;
-  --search-bg: #202c33;
-  --chip-border: #2a3942;
-  --chip-text: #aebac1;
-  --chip-active-bg: #103529;
-  --chip-active-text: #00a884;
-  --brand-green: #00a884;
-  --brand-green-strong: #00a884;
-  --text-primary: #e9edef;
-  --text-secondary: #8696a0;
-  --text-tertiary: #8696a0;
-  --hover-row: #202c33;
-  --active-row: #2a3942;
-  --icon: #aebac1;
-  --chat-bg: #0b141a;
-  --chat-pattern: 0.04;
-  --bubble-in: #202c33;
-  --bubble-out: #005c4b;
-  --bubble-out-text: #e9edef;
-  --bubble-shadow: rgba(0, 0, 0, 0.3);
-  --bubble-text: #e9edef;
-  --bubble-meta: #8696a0;
-  --bubble-border-top: #2a3942;
-  --btn-link: #00a884;
-  --date-pill-bg: #182229;
-  --date-pill-text: #8696a0;
-  --input-bar-bg: #202c33;
-  --input-field-bg: #2a3942;
-  --footer-note: #8696a0;
-  --link: #53bdeb;
-  --check: #53bdeb;
-  --scroll-thumb: rgba(255, 255, 255, 0.16);
+/* ------------------------------------------------------------
+   SOS HUB — variante LIGHT PREMIUM (mesmo vermelho de marca).
+   ------------------------------------------------------------ */
+html[data-theme='light'] {
+  --bg-app: #ffffff;
+  --panel-left: #fafafa;
+  --panel-divider: rgba(0, 0, 0, 0.06);
+  --header-bg: #ffffff;
+  --search-bg: #f4f4f5;
+  --chip-border: #e4e4e7;
+  --chip-text: #52525b;
+  --chip-active-bg: rgba(227, 6, 19, 0.08);
+  --chip-active-text: #e30613;
+  --brand-green: #e30613;
+  --brand-green-strong: #ff202d;
+  --text-primary: #09090b;
+  --text-secondary: #52525b;
+  --text-tertiary: #a1a1aa;
+  --hover-row: #f4f4f5;
+  --active-row: #efeff1;
+  --icon: #52525b;
+  --chat-bg: #f7f7f8;
+  --chat-pattern: 0.03;
+  --chat-glow: rgba(227, 6, 19, 0.06);
+  --bubble-in: #ffffff;
+  --bubble-out: #fde7e9;
+  --bubble-out-text: #09090b;
+  --bubble-shadow: rgba(0, 0, 0, 0.08);
+  --bubble-text: #18181b;
+  --bubble-meta: #71717a;
+  --bubble-border-top: rgba(0, 0, 0, 0.06);
+  --btn-link: #e30613;
+  --date-pill-bg: #ffffff;
+  --date-pill-text: #71717a;
+  --input-bar-bg: #ffffff;
+  --input-field-bg: #f4f4f5;
+  --footer-note: #a1a1aa;
+  --link: #e30613;
+  --check: #e30613;
+  --scroll-thumb: rgba(0, 0, 0, 0.18);
 }
 
 /* ============================================================
@@ -136,7 +148,10 @@ body {
 }
 
 body {
-  font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-family:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   background: var(--bg-app);
   color: var(--text-primary);
   overflow: hidden;
@@ -152,6 +167,15 @@ body {
 }
 .scroll::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* glow vermelho central da marca — único gradiente, extremamente suave */
+.chat-bg-glow {
+  background: radial-gradient(
+    circle at 50% 28%,
+    var(--chat-glow),
+    transparent 62%
+  );
 }
 
 /* padrão de fundo do chat (SVG) — opacidade controlada pelo token */

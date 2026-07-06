@@ -12,7 +12,7 @@ const icons = useIcons()
   >
     <div class="flex items-center gap-3.5">
       <div
-        class="w-10.5 h-10.5 rounded-full shrink-0 overflow-hidden grid place-items-center bg-[#d9f0e3] text-[#6b7c84]"
+        class="w-10.5 h-10.5 rounded-full shrink-0 overflow-hidden grid place-items-center bg-active-row text-text-secondary"
       >
         <img v-if="peer.img" :src="peer.img" alt="" class="w-full h-full object-cover" />
         <span v-else class="w-6.5 h-6.5" v-html="icons.person" />

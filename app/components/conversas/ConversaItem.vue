@@ -15,7 +15,7 @@ const icons = useIcons()
   >
     <!-- avatar -->
     <div
-      class="w-12.5 h-12.5 rounded-full shrink-0 overflow-hidden grid place-items-center bg-[#d9f0e3] text-[#6b7c84]"
+      class="w-12.5 h-12.5 rounded-full shrink-0 overflow-hidden grid place-items-center bg-active-row text-text-secondary"
       :style="conversa.color ? { background: conversa.color, color: '#fff' } : undefined"
     >
       <img v-if="conversa.img" :src="conversa.img" alt="" class="w-full h-full object-cover" />

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const icons = useIcons()
 
-const dark = ref(false)
+const dark = ref(true)
 const filtro = ref('Favoritas')
 
 // store Pinia: cacheia conversas e mensagens (volta instantânea, sem refetch)
@@ -14,6 +14,10 @@ const {
   hasMoreMensagens,
 } = storeToRefs(chat)
 
+// SOS HUB: inicia no tema dark premium
+onMounted(() => {
+  document.documentElement.setAttribute('data-theme', dark.value ? 'dark' : 'light')
+})
 onMounted(chat.loadConversas)
 
 const activePeer = computed(() => {
