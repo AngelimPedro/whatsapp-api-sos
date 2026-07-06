@@ -61,7 +61,9 @@ export async function useProdutos(query: string = 'VIOLAO'): Promise<UseProdutos
   try {
     // 2) Tenta realizar a chamada na API de produtos com o token de acesso atual
     const response = await doApiCall(tokenRow.access_token)
-    return { data: response?.data || [] }
+    const produtos = response?.data || []
+    console.log(`[useProdutos] ✅ Busca "${query}" concluída com sucesso: ${produtos.length} produto(s) encontrado(s).`)
+    return { data: produtos }
   } catch (err: any) {
     // 3) Se receber erro 401 (token expirado), inicia o fluxo de renovação automática
     if (err.statusCode === 401 || err.status === 401) {
@@ -106,7 +108,9 @@ export async function useProdutos(query: string = 'VIOLAO'): Promise<UseProdutos
         // 4) Refaz a requisição original de produtos usando o novo token recém-gerado
         console.log('[useProdutos] Refazendo busca de produtos com o novo token de acesso...')
         const retryResponse = await doApiCall(refreshResponse.access_token)
-        return { data: retryResponse?.data || [] }
+        const produtosRetry = retryResponse?.data || []
+        console.log(`[useProdutos] ✅ Busca "${query}" concluída com sucesso após renovar o token: ${produtosRetry.length} produto(s) encontrado(s).`)
+        return { data: produtosRetry }
 
       } catch (refreshErr: any) {
         console.error('❌ Erro crítico ao tentar renovar o token do Bling:', refreshErr.message || refreshErr)
