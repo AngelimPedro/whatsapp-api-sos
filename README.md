@@ -141,3 +141,5 @@ npm run preview
 Veja a [documentação de deploy do Nuxt](https://nuxt.com/docs/getting-started/deployment).
 Em produção, configure o webhook da Datafy para a URL pública do deploy
 (`https://seu-dominio/api/webhook`).
+
+<!-- redeploy trigger: 2026-07-05 22:29 -->
