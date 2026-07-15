@@ -20,44 +20,36 @@ export interface UseProdutosResult {
 }
 
 /**
- * Busca produtos na API da SOS Cordas.
+ * Busca produtos na API da SOS Cordas Belém.
  */
 export async function useProdutos(query: string = ''): Promise<UseProdutosResult> {
-  const token = process.env.SOS_CORDAS_TOKEN || '618d11b0-bdc7-41b7-bf35-3c39af19376e'
-
   try {
-    const response = await $fetch<any>('https://api.soscordas.com.br/soscordas/v2/product', {
+    const response = await $fetch<any>('https://hub.soscordasbelem.com.br/api/produtos', {
       method: 'GET',
-      headers: {
-        'Token': token
-      },
       query: {
-        active: '',
-        q: query,
-        page: '',
-        limit: '15'
+        search: query
       }
     })
 
-    const items = response?.data || []
-    const mapped: Produto[] = items.map((item: any) => ({
-      id: item.id,
-      nome: item.name,
-      codigo: item.reference || '',
-      preco: item.promotionValue > 0 ? item.promotionValue : item.saleValue,
+    const items = response?.results || []
+    const mapped: Produto[] = items.map((item: any, idx: number) => ({
+      id: idx + 1,
+      nome: item.titulo || '',
+      codigo: '',
+      preco: item.valor || 0,
       precoCusto: 0,
       estoque: {
-        saldoVirtualTotal: 5 // Valor padrão
+        saldoVirtualTotal: 5
       },
       tipo: 'F',
       situacao: 'A',
       formato: 'S',
-      descricaoCurta: item.subGroupName || '',
-      imagemURL: item.image?.image || '',
-      subGroupName: item.subGroupName || ''
+      descricaoCurta: item.nome_categoria || '',
+      imagemURL: item.imagem_url || '',
+      subGroupName: item.nome_categoria || ''
     }))
 
-    console.log(`[useProdutos] ✅ Busca "${query}" na SOS Cordas concluída: ${mapped.length} produto(s) encontrado(s).`)
+    console.log(`[useProdutos] ✅ Busca "${query}" na SOS Cordas Belém concluída: ${mapped.length} produto(s) encontrado(s).`)
     return { data: mapped }
   } catch (error: any) {
     console.error(`[useProdutos] ❌ Erro ao buscar produtos para "${query}":`, error.message || error)

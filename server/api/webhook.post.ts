@@ -131,66 +131,85 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
       // Chama a IA para gerar a resposta e classificar o status
       const aiResult = await getAIResponse(history, latestMsgText, ev.contactName || undefined)
 
-      console.log(`[webhook] resposta da IA: "${aiResult.reply}", novo status: "${aiResult.status}"`)
+      console.log(`[webhook] resposta da IA processada, novo status: "${aiResult.status}"`)
 
-      // Envia a resposta da IA via WhatsApp (Datafy)
-      let aiWamid: string | null = null
-      const hasImage = !!aiResult.imageUrl
+      // Define a lista de mensagens a enviar
+      const messagesToSend = aiResult.messagesToSend && aiResult.messagesToSend.length > 0
+        ? aiResult.messagesToSend
+        : [
+            aiResult.imageUrl
+              ? { type: 'image' as const, imageUrl: aiResult.imageUrl, text: aiResult.reply }
+              : { type: 'text' as const, text: aiResult.reply }
+          ]
 
-      try {
-        if (hasImage) {
-          aiWamid = await sendImageMessage(ev.phoneNumberId, ev.contactWaId, aiResult.imageUrl!, aiResult.reply)
-        } else {
-          aiWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, aiResult.reply)
+      let lastInsertedAI: any = null
+
+      for (const [index, msg] of messagesToSend.entries()) {
+        let sentWamid: string | null = null
+        try {
+          if (msg.type === 'image' && msg.imageUrl) {
+            sentWamid = await sendImageMessage(ev.phoneNumberId, ev.contactWaId, msg.imageUrl, msg.text)
+          } else if (msg.type === 'text' && msg.text) {
+            sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text)
+          }
+        } catch (sendErr) {
+          console.error(`[webhook] erro ao enviar mensagem index ${index}:`, sendErr)
         }
-      } catch (sendErr) {
-        console.error('[webhook] erro ao enviar WhatsApp da IA:', sendErr)
+
+        // Salva a mensagem no banco
+        const messagePayload: Record<string, any> = {
+          conversation_id: conversationId,
+          wa_message_id: sentWamid || `bot-ai-${Date.now()}-${index}`,
+          direction: 'out',
+          status: sentWamid ? 'sent' : null,
+          wa_timestamp: new Date().toISOString()
+        }
+
+        if (msg.type === 'image') {
+          messagePayload.kind = 'image'
+          messagePayload.media_url = msg.imageUrl
+          messagePayload.caption = msg.text || ''
+        } else {
+          messagePayload.kind = 'text'
+          messagePayload.body = msg.text || ''
+        }
+
+        const { data: insertedAI, error: insertAIErr } = await supabase
+          .from('messages')
+          .insert(messagePayload)
+          .select('*')
+          .single()
+
+        if (insertAIErr) {
+          console.error('[webhook] erro ao persistir mensagem da IA:', insertAIErr.message)
+        } else {
+          lastInsertedAI = insertedAI
+        }
+
+        // Pequeno delay entre envios para manter ordem no WhatsApp
+        if (index < messagesToSend.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 800))
+        }
       }
 
-      // Salva a mensagem da IA no banco
-      const messagePayload: Record<string, any> = {
-        conversation_id: conversationId,
-        wa_message_id: aiWamid || `bot-ai-${Date.now()}`,
-        direction: 'out',
-        status: aiWamid ? 'sent' : null,
-        wa_timestamp: new Date().toISOString()
-      }
+      // Atualiza a conversa com o novo status da IA e o preview da última mensagem
+      const lastMsg = messagesToSend[messagesToSend.length - 1]
+      const previewText = lastMsg.type === 'image' ? `[Imagem] ${lastMsg.text || ''}` : (lastMsg.text || '')
 
-      if (hasImage) {
-        messagePayload.kind = 'image'
-        messagePayload.media_url = aiResult.imageUrl
-        messagePayload.caption = aiResult.reply
-      } else {
-        messagePayload.kind = 'text'
-        messagePayload.body = aiResult.reply
-      }
-
-      const { data: insertedAI, error: insertAIErr } = await supabase
-        .from('messages')
-        .insert(messagePayload)
-        .select('*')
-        .single()
-
-      if (insertAIErr) {
-        console.error('[webhook] erro ao persistir mensagem da IA:', insertAIErr.message)
-        return
-      }
-
-      // Atualiza a conversa com o novo status da IA
       const { data: finalConvRow } = await supabase
         .from('conversations')
         .update({
           status: aiResult.status,
-          last_message_preview: aiResult.reply,
+          last_message_preview: previewText.substring(0, 200),
           last_message_at: new Date().toISOString()
         })
         .eq('id', conversationId)
         .select('*')
         .single()
 
-      // Publica a mensagem da IA no Pusher para o front atualizar
-      if (finalConvRow && insertedAI) {
-        await publishNewMessage(finalConvRow, insertedAI)
+      // Publica no Pusher para o front atualizar (usamos a última mensagem inserida como referência)
+      if (finalConvRow && lastInsertedAI) {
+        await publishNewMessage(finalConvRow, lastInsertedAI)
       }
     } catch (aiErr) {
       console.error('[webhook] erro no processamento da IA:', aiErr)
