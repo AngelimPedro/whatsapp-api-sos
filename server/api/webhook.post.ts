@@ -146,6 +146,11 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
 
       for (const [index, msg] of messagesToSend.entries()) {
         let sentWamid: string | null = null
+        let persistedKind: 'text' | 'image' = msg.type === 'image' ? 'image' : 'text'
+        let persistedBody = msg.text || ''
+        let persistedMediaUrl: string | null = msg.type === 'image' ? (msg.imageUrl || null) : null
+        let persistedCaption: string | null = msg.type === 'image' ? (msg.text || null) : null
+
         try {
           if (msg.type === 'image' && msg.imageUrl) {
             sentWamid = await sendImageMessage(ev.phoneNumberId, ev.contactWaId, msg.imageUrl, msg.text)
@@ -154,24 +159,42 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
           }
         } catch (sendErr) {
           console.error(`[webhook] erro ao enviar mensagem index ${index}:`, sendErr)
+
+          // Se a imagem falhar, tenta pelo menos entregar o texto do produto
+          if (msg.type === 'image' && msg.text) {
+            try {
+              sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text)
+              persistedKind = 'text'
+              persistedBody = msg.text
+              persistedMediaUrl = null
+              persistedCaption = null
+              console.warn(`[webhook] fallback texto enviado para imagem index ${index}`)
+            } catch (fallbackErr) {
+              console.error(`[webhook] fallback texto também falhou index ${index}:`, fallbackErr)
+            }
+          }
         }
 
-        // Salva a mensagem no banco
+        // Só persiste o que realmente saiu pelo WhatsApp (evita fantasma no dashboard)
+        if (!sentWamid) {
+          console.warn(`[webhook] mensagem index ${index} não enviada — não será persistida`)
+          continue
+        }
+
         const messagePayload: Record<string, any> = {
           conversation_id: conversationId,
-          wa_message_id: sentWamid || `bot-ai-${Date.now()}-${index}`,
+          wa_message_id: sentWamid,
           direction: 'out',
-          status: sentWamid ? 'sent' : null,
+          kind: persistedKind,
+          status: 'sent',
           wa_timestamp: new Date().toISOString()
         }
 
-        if (msg.type === 'image') {
-          messagePayload.kind = 'image'
-          messagePayload.media_url = msg.imageUrl
-          messagePayload.caption = msg.text || ''
+        if (persistedKind === 'image') {
+          messagePayload.media_url = persistedMediaUrl
+          messagePayload.caption = persistedCaption || ''
         } else {
-          messagePayload.kind = 'text'
-          messagePayload.body = msg.text || ''
+          messagePayload.body = persistedBody
         }
 
         const { data: insertedAI, error: insertAIErr } = await supabase
