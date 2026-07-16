@@ -10,13 +10,61 @@ interface AIResponse {
 
 let cachedCategories: string[] | null = null
 let cacheTimestamp = 0
+const CATEGORIES_CACHE_MS = 60 * 1000 // 1 minuto
 
 /**
- * Busca categorias da SOS Cordas Belém.
+ * Normaliza texto de categoria para comparação (ex: "0.11" ≈ "011").
+ */
+function normalizeCategoryKey(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+}
+
+/**
+ * Resolve um nome retornado pela IA para o nome EXATO da API, ou null.
+ */
+function resolveCategoryName(candidate: string | null | undefined, categories: string[]): string | null {
+  if (!candidate || !categories.length) return null
+
+  const trimmed = candidate.trim()
+  const exact = categories.find(c => c === trimmed)
+  if (exact) return exact
+
+  const caseInsensitive = categories.find(c => c.toLowerCase() === trimmed.toLowerCase())
+  if (caseInsensitive) return caseInsensitive
+
+  const normalizedCandidate = normalizeCategoryKey(trimmed)
+  if (!normalizedCandidate) return null
+
+  const fuzzy = categories.find(c => normalizeCategoryKey(c) === normalizedCandidate)
+  return fuzzy || null
+}
+
+/**
+ * Filtra sugestões da IA mantendo apenas nomes que existem na API.
+ */
+function resolveSuggestedCategories(suggested: string[] | undefined, categories: string[]): string[] {
+  if (!suggested?.length) return []
+
+  const resolved: string[] = []
+  for (const item of suggested) {
+    const match = resolveCategoryName(item, categories)
+    if (match && !resolved.includes(match)) {
+      resolved.push(match)
+    }
+  }
+  return resolved
+}
+
+/**
+ * Busca categorias exclusivamente da API da SOS Cordas Belém.
  */
 async function getCategories(): Promise<string[]> {
   const now = Date.now()
-  if (cachedCategories && (now - cacheTimestamp < 5 * 60 * 1000)) {
+  if (cachedCategories && (now - cacheTimestamp < CATEGORIES_CACHE_MS)) {
     return cachedCategories
   }
 
@@ -24,19 +72,23 @@ async function getCategories(): Promise<string[]> {
     const data = await $fetch<any>('https://hub.soscordasbelem.com.br/api/categorias', {
       method: 'GET'
     })
-    if (data?.results) {
-      cachedCategories = data.results.map((c: any) => c.nome_categoria.trim())
+    if (data?.results?.length) {
+      cachedCategories = data.results
+        .map((c: any) => String(c.nome_categoria || '').trim())
+        .filter(Boolean)
       cacheTimestamp = now
       return cachedCategories!
     }
   } catch (err) {
     console.error('[aiService] Erro ao buscar categorias:', err)
   }
+
+  // Sem fallback estático: se a API falhar e não houver cache válido, lista vazia
   return cachedCategories || []
 }
 
 /**
- * Classifica a intenção do cliente com base no histórico e lista de categorias.
+ * Classifica a intenção do cliente com base no histórico e lista de categorias da API.
  */
 async function classifyIntent(
   latestMessage: string,
@@ -44,17 +96,22 @@ async function classifyIntent(
   categories: string[],
   apiKey: string
 ): Promise<{ exactMatch: string | null; suggestedCategories: string[] }> {
+  if (!categories.length) {
+    return { exactMatch: null, suggestedCategories: [] }
+  }
+
   try {
     const systemPrompt = `Você é um classificador inteligente de intenções para um chatbot de e-commerce de instrumentos musicais.
 Você deve analisar a última mensagem do cliente e o histórico da conversa para identificar se ele está procurando por produtos e qual categoria exata da nossa loja melhor corresponde à sua busca.
 
-LISTA DE CATEGORIAS EXISTENTES:
+LISTA OFICIAL DE CATEGORIAS (use APENAS estes nomes, copiados exatamente):
 ${categories.map(c => `- ${c}`).join('\n')}
 
 REGRAS:
-1. Se a última mensagem ou a escolha recente do cliente corresponder de forma clara a UMA categoria da lista (permita variações, sinônimos, erros de digitação, ex: "cordas de guitarra" ou "guitarra" ou "violao nylon"), defina "exactMatch" com o NOME EXATO da categoria (exemplo: "Cordas de Guitarra").
-2. Se a mensagem for relacionada a produtos mas for ampla (ex: "gostaria de saber sobre cordas"), retorne "exactMatch" como null e liste as categorias semelhantes/relacionadas em "suggestedCategories" (máximo de 8).
+1. Se a última mensagem ou a escolha recente do cliente corresponder de forma clara a UMA categoria da lista (permita variações, sinônimos, erros de digitação, ex: "cordas de guitarra 011", "guitarra 11", "011"), defina "exactMatch" com o NOME EXATO da categoria como aparece na lista (exemplo: "CORDAS DE GUITARRA 011").
+2. Se a mensagem for relacionada a produtos mas for ampla (ex: "gostaria de saber sobre cordas"), retorne "exactMatch" como null e liste as categorias semelhantes/relacionadas em "suggestedCategories" (máximo de 8), usando SOMENTE nomes exatos da lista.
 3. Se a pesquisa do cliente não for semelhante a NENHUMA categoria (ex: digitou algo totalmente fora do contexto, ou apenas uma saudação como "olá", ou uma dúvida de frete/pagamento), retorne "exactMatch" como null e "suggestedCategories" como um array vazio.
+4. NUNCA invente nomes de categorias. NUNCA use termos como "ENCORDOAMENTO", "subcategoria" ou variações que não estejam na lista oficial.
 
 FORMATO DE RESPOSTA:
 Retorne estritamente um objeto JSON com esta estrutura (sem formatação markdown \`\`\`json):
@@ -101,10 +158,10 @@ Retorne estritamente um objeto JSON com esta estrutura (sem formatação markdow
     cleanJson = cleanJson.trim()
 
     const parsed = JSON.parse(cleanJson)
-    return {
-      exactMatch: parsed.exactMatch || null,
-      suggestedCategories: parsed.suggestedCategories || []
-    }
+    const exactMatch = resolveCategoryName(parsed.exactMatch, categories)
+    const suggestedCategories = resolveSuggestedCategories(parsed.suggestedCategories, categories)
+
+    return { exactMatch, suggestedCategories }
   } catch (e) {
     console.error('[aiService] Erro ao classificar intenção:', e)
     return { exactMatch: null, suggestedCategories: [] }
@@ -112,7 +169,7 @@ Retorne estritamente um objeto JSON com esta estrutura (sem formatação markdow
 }
 
 /**
- * Envia as mensagens e o contexto da agência para a OpenAI (GPT-4o-Mini)
+ * Envia as mensagens e o contexto da loja para a OpenAI (GPT-4o-Mini)
  * e retorna a resposta formatada como JSON contendo o texto a enviar e o novo status.
  */
 export async function getAIResponse(
@@ -131,10 +188,11 @@ export async function getAIResponse(
     }
   }
 
-  // 1) Busca categorias dinâmicas da API da SOS Cordas
+  // 1) Busca categorias exclusivamente da API
   const categories = await getCategories()
+  console.log('[aiService] Categorias da API:', categories.length)
 
-  // 2) Classifica a intenção do usuário
+  // 2) Classifica a intenção do usuário (já validada contra a lista da API)
   const classification = await classifyIntent(latestMessage, history, categories, apiKey)
   console.log('[aiService] Classificação da busca:', classification)
 
@@ -143,7 +201,7 @@ export async function getAIResponse(
   let isSuggested = false
 
   if (classification.exactMatch) {
-    // 3) Busca os produtos exatos da categoria identificada
+    // 3) Busca os produtos exatos da categoria identificada (nome oficial da API)
     produtos = (await useProdutos(classification.exactMatch)).data
     
     const produtosTxt = produtos.map(p => 
@@ -151,6 +209,7 @@ export async function getAIResponse(
     ).join('\n\n')
 
     contextInstruction = `O cliente está buscando produtos da categoria específica "${classification.exactMatch}".
+Use EXATAMENTE este nome de categoria se precisar mencioná-la: "${classification.exactMatch}".
 Abaixo estão os produtos reais encontrados no estoque da loja para esta categoria. 
 Nós vamos enviar as imagens destes produtos separadamente no WhatsApp com o formato "titulo - descrição - valor" no rodapé/caption.
 Escreva um texto de introdução muito direto e conciso, informando que encontrou as opções de "${classification.exactMatch}".
@@ -164,7 +223,8 @@ ${produtosTxt || 'Nenhum produto correspondente retornado da API.'}
     contextInstruction = `A busca do cliente foi abrangente. 
 Nós vamos enviar as categorias sugeridas separadamente como mensagens individuais no WhatsApp.
 Escreva APENAS uma frase de introdução muito objetiva, perguntando qual destas categorias ele gostaria de ver. 
-IMPORTANTE: NUNCA liste as categorias no seu texto de reply, pois nós faremos isso programaticamente.`
+IMPORTANTE: NUNCA liste as categorias no seu texto de reply, pois nós faremos isso programaticamente.
+IMPORTANTE: NUNCA invente nomes de categorias.`
   } else {
     // 5) Sem relação direta
     const isSearchingProduct = latestMessage.toLowerCase().includes('quero') || 
@@ -174,15 +234,17 @@ IMPORTANTE: NUNCA liste as categorias no seu texto de reply, pois nós faremos i
                               latestMessage.toLowerCase().includes('corda') ||
                               latestMessage.toLowerCase().includes('produto')
 
-    if (isSearchingProduct) {
+    if (isSearchingProduct && categories.length > 0) {
       isSuggested = true
       contextInstruction = `O cliente está procurando por algo que não corresponde diretamente a nenhuma de nossas categorias. 
-Nós vamos enviar a lista de todas as categorias existentes separadamente como mensagens individuais no WhatsApp.
+Nós vamos enviar a lista de categorias da API separadamente como mensagens individuais no WhatsApp.
 Escreva APENAS uma frase de introdução educada e muito curta, explicando que não encontramos a correspondência exata, e pergunte se ele deseja ver alguma de nossas categorias disponíveis.
-IMPORTANTE: NUNCA liste as categorias no seu texto de reply, pois nós faremos isso programaticamente.`
+IMPORTANTE: NUNCA liste as categorias no seu texto de reply, pois nós faremos isso programaticamente.
+IMPORTANTE: NUNCA invente nomes de categorias.`
       classification.suggestedCategories = categories
     } else {
-      contextInstruction = `O cliente iniciou uma conversa casual ou fez uma pergunta geral (como formas de pagamento, frete, falar com humano). Responda de forma extremamente concisa e objetiva de acordo com as regras gerais da loja.`
+      contextInstruction = `O cliente iniciou uma conversa casual ou fez uma pergunta geral (como formas de pagamento, frete, falar com humano). Responda de forma extremamente concisa e objetiva de acordo com as regras gerais da loja.
+Se mencionar categorias de produtos, use APENAS nomes desta lista oficial: ${categories.slice(0, 20).join(', ') || '(nenhuma categoria carregada)'}.`
     }
   }
 
@@ -202,7 +264,7 @@ REGRAS DE CONVERSAÇÃO E FLUXO:
 1. O status atual da conversa é "bot".
 2. Diretriz de Tom de Voz: Seja extremamente objetivo, curto e direto. NUNCA use emojis em hipótese alguma. Vá direto ao ponto.
 3. Se o cliente disser apenas "olá", "bom dia" ou perguntar se a loja está aberta, responda de forma muito curta e direta. Mantenha o status "bot".
-4. REQUISITO CRÍTICO: Não invente produtos ou preços.
+4. REQUISITO CRÍTICO: Não invente produtos, preços ou nomes de categorias. Categorias só existem se vierem da API/contexto acima.
 5. Se a lista de produtos da categoria estiver vazia, informe que não há estoque no momento e diga que vai transferir para um atendente verificar encomendas. Nesse caso, mude o status para "atendimento_humano".
 6. Se o cliente demonstrar intenção clara de fechar/comprar um dos produtos apresentados, peça o endereço de entrega de forma direta. Mantenha o status "bot".
 7. Se o cliente fornecer o endereço de entrega, diga apenas que um consultor entrará em contato em instantes para finalizar a compra e enviar os dados de pagamento. Altere o status para "qualificado".
@@ -280,7 +342,7 @@ Importante: Apenas o JSON puro na resposta.`
         })
       }
     } else if (isSuggested && classification.suggestedCategories.length > 0) {
-      // Adiciona cada categoria recomendada separadamente
+      // Adiciona cada categoria recomendada separadamente (já validadas pela API)
       const limitCategories = classification.suggestedCategories.slice(0, 8)
       for (const cat of limitCategories) {
         messagesToSend.push({
