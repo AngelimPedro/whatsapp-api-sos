@@ -8,9 +8,18 @@ interface AIResponse {
   messagesToSend?: { type: 'text' | 'image'; text?: string; imageUrl?: string }[]
 }
 
+interface RegraIA {
+  titulo: string
+  descricao: string
+}
+
 let cachedCategories: string[] | null = null
-let cacheTimestamp = 0
-const CATEGORIES_CACHE_MS = 60 * 1000 // 1 minuto
+let categoriesCacheTimestamp = 0
+const CATEGORIES_CACHE_MS = 60 * 1000
+
+let cachedRegras: RegraIA[] | null = null
+let regrasCacheTimestamp = 0
+const REGRAS_CACHE_MS = 60 * 1000
 
 /**
  * Normaliza texto de categoria para comparação (ex: "0.11" ≈ "011").
@@ -64,7 +73,7 @@ function resolveSuggestedCategories(suggested: string[] | undefined, categories:
  */
 async function getCategories(): Promise<string[]> {
   const now = Date.now()
-  if (cachedCategories && (now - cacheTimestamp < CATEGORIES_CACHE_MS)) {
+  if (cachedCategories && (now - categoriesCacheTimestamp < CATEGORIES_CACHE_MS)) {
     return cachedCategories
   }
 
@@ -76,24 +85,123 @@ async function getCategories(): Promise<string[]> {
       cachedCategories = data.results
         .map((c: any) => String(c.nome_categoria || '').trim())
         .filter(Boolean)
-      cacheTimestamp = now
+      categoriesCacheTimestamp = now
       return cachedCategories!
     }
   } catch (err) {
     console.error('[aiService] Erro ao buscar categorias:', err)
   }
 
-  // Sem fallback estático: se a API falhar e não houver cache válido, lista vazia
   return cachedCategories || []
 }
 
 /**
- * Classifica a intenção do cliente com base no histórico e lista de categorias da API.
+ * Busca todas as regras ativas em https://hub.soscordasbelem.com.br/api/regras-ia
+ */
+async function getRegrasIA(): Promise<RegraIA[]> {
+  const now = Date.now()
+  if (cachedRegras && (now - regrasCacheTimestamp < REGRAS_CACHE_MS)) {
+    return cachedRegras
+  }
+
+  try {
+    const data = await $fetch<{
+      error?: boolean
+      results?: { titulo?: string; descricao?: string }[]
+    }>('https://hub.soscordasbelem.com.br/api/regras-ia', {
+      method: 'GET'
+    })
+
+    if (data?.results?.length) {
+      cachedRegras = data.results
+        .map((r) => ({
+          titulo: String(r.titulo || '').trim(),
+          descricao: String(r.descricao || '').trim()
+        }))
+        .filter((r) => r.titulo || r.descricao)
+      regrasCacheTimestamp = now
+      return cachedRegras
+    }
+  } catch (err) {
+    console.error('[aiService] Erro ao buscar regras-ia:', err)
+  }
+
+  return cachedRegras || []
+}
+
+/**
+ * Monta o bloco único de regras (conversação + fluxo + classificação) vindo da API.
+ */
+function formatRegrasPrompt(regras: RegraIA[]): string {
+  if (!regras.length) {
+    console.warn('[aiService] Nenhuma regra carregada da API regras-ia')
+    return 'REGRAS: (nenhuma regra carregada da API — responda de forma objetiva e não invente dados.)'
+  }
+
+  const linhas = regras.map((r, i) => {
+    const titulo = r.titulo || `Regra ${i + 1}`
+    const descricao = r.descricao || titulo
+    return `${i + 1}. ${titulo}: ${descricao}`
+  })
+
+  return `REGRAS OBRIGATÓRIAS (fonte: API regras-ia — conversação, fluxo e classificação):
+${linhas.join('\n')}`
+}
+
+/**
+ * Contexto dinâmico desta mensagem (só fatos da busca; regras comportamentais vêm da API).
+ */
+function buildSearchContext(params: {
+  exactMatch: string | null
+  suggestedCategories: string[]
+  produtos: Produto[]
+  categories: string[]
+  isSuggested: boolean
+  latestMessage: string
+}): string {
+  const { exactMatch, suggestedCategories, produtos, categories, isSuggested, latestMessage } = params
+
+  if (exactMatch) {
+    const produtosTxt = produtos.map(p =>
+      `- Título: ${p.nome}\n  Categoria: ${p.descricaoCurta}\n  Valor: R$ ${p.preco}\n  Imagem: ${p.imagemURL}`
+    ).join('\n\n')
+
+    return `FATO DA BUSCA: categoria correspondente "${exactMatch}".
+O sistema enviará as imagens dos produtos separadamente no WhatsApp.
+PRODUTOS RETORNADOS DA API:
+${produtosTxt || '(lista vazia — nenhum produto retornado)'}
+`
+  }
+
+  if (isSuggested && suggestedCategories.length > 0) {
+    return `FATO DA BUSCA: sem match exato; o sistema enviará estas categorias em mensagens separadas no WhatsApp:
+${suggestedCategories.map(c => `- ${c}`).join('\n')}
+Mensagem do cliente: "${latestMessage}"
+`
+  }
+
+  return `FATO DA BUSCA: sem match de produto/categoria nesta mensagem.
+Mensagem do cliente: "${latestMessage}"
+Categorias oficiais disponíveis (referência): ${categories.slice(0, 30).join(', ') || '(nenhuma)'}
+`
+}
+
+function stripCodeFences(content: string): string {
+  let clean = content.trim()
+  if (clean.startsWith('```json')) clean = clean.substring(7)
+  else if (clean.startsWith('```')) clean = clean.substring(3)
+  if (clean.endsWith('```')) clean = clean.substring(0, clean.length - 3)
+  return clean.trim()
+}
+
+/**
+ * Classifica a intenção do cliente. Regras vêm da API; aqui só há lista + formato JSON.
  */
 async function classifyIntent(
   latestMessage: string,
   history: { role: 'user' | 'assistant'; content: string }[],
   categories: string[],
+  regras: RegraIA[],
   apiKey: string
 ): Promise<{ exactMatch: string | null; suggestedCategories: string[] }> {
   if (!categories.length) {
@@ -101,25 +209,19 @@ async function classifyIntent(
   }
 
   try {
-    const systemPrompt = `Você é um classificador inteligente de intenções para um chatbot de e-commerce de instrumentos musicais.
-Você deve analisar a última mensagem do cliente e o histórico da conversa para identificar se ele está procurando por produtos e qual categoria exata da nossa loja melhor corresponde à sua busca.
+    const systemPrompt = `Você é um classificador de intenções para chatbot de e-commerce de instrumentos musicais.
+Analise a última mensagem e o histórico para decidir se há categoria correspondente.
 
 LISTA OFICIAL DE CATEGORIAS (use APENAS estes nomes, copiados exatamente):
 ${categories.map(c => `- ${c}`).join('\n')}
 
-REGRAS:
-1. Se a última mensagem ou a escolha recente do cliente corresponder de forma clara a UMA categoria da lista (permita variações, sinônimos, erros de digitação, ex: "cordas de guitarra 011", "guitarra 11", "011"), defina "exactMatch" com o NOME EXATO da categoria como aparece na lista (exemplo: "CORDAS DE GUITARRA 011").
-2. Se a mensagem for relacionada a produtos mas for ampla (ex: "gostaria de saber sobre cordas"), retorne "exactMatch" como null e liste as categorias semelhantes/relacionadas em "suggestedCategories" (máximo de 8), usando SOMENTE nomes exatos da lista.
-3. Se a pesquisa do cliente não for semelhante a NENHUMA categoria (ex: digitou algo totalmente fora do contexto, ou apenas uma saudação como "olá", ou uma dúvida de frete/pagamento), retorne "exactMatch" como null e "suggestedCategories" como um array vazio.
-4. NUNCA invente nomes de categorias. NUNCA use termos como "ENCORDOAMENTO", "subcategoria" ou variações que não estejam na lista oficial.
+${formatRegrasPrompt(regras)}
 
-FORMATO DE RESPOSTA:
-Retorne estritamente um objeto JSON com esta estrutura (sem formatação markdown \`\`\`json):
+FORMATO DE RESPOSTA (JSON puro, sem markdown):
 {
   "exactMatch": "NOME_DA_CATEGORIA_OU_NULL",
   "suggestedCategories": ["CATEGORIA_1", "CATEGORIA_2", ...]
-}
-`
+}`
 
     const response = await $fetch<{
       choices: { message: { content: string } }[]
@@ -145,23 +247,11 @@ Retorne estritamente um objeto JSON com esta estrutura (sem formatação markdow
     })
 
     const contentStr = response?.choices?.[0]?.message?.content?.trim() ?? ''
-    
-    let cleanJson = contentStr
-    if (cleanJson.startsWith('```json')) {
-      cleanJson = cleanJson.substring(7)
-    } else if (cleanJson.startsWith('```')) {
-      cleanJson = cleanJson.substring(3)
+    const parsed = JSON.parse(stripCodeFences(contentStr))
+    return {
+      exactMatch: resolveCategoryName(parsed.exactMatch, categories),
+      suggestedCategories: resolveSuggestedCategories(parsed.suggestedCategories, categories)
     }
-    if (cleanJson.endsWith('```')) {
-      cleanJson = cleanJson.substring(0, cleanJson.length - 3)
-    }
-    cleanJson = cleanJson.trim()
-
-    const parsed = JSON.parse(cleanJson)
-    const exactMatch = resolveCategoryName(parsed.exactMatch, categories)
-    const suggestedCategories = resolveSuggestedCategories(parsed.suggestedCategories, categories)
-
-    return { exactMatch, suggestedCategories }
   } catch (e) {
     console.error('[aiService] Erro ao classificar intenção:', e)
     return { exactMatch: null, suggestedCategories: [] }
@@ -169,8 +259,7 @@ Retorne estritamente um objeto JSON com esta estrutura (sem formatação markdow
 }
 
 /**
- * Envia as mensagens e o contexto da loja para a OpenAI (GPT-4o-Mini)
- * e retorna a resposta formatada como JSON contendo o texto a enviar e o novo status.
+ * Gera a resposta da IA. Regras de conversação/fluxo vêm da API regras-ia.
  */
 export async function getAIResponse(
   history: { role: 'user' | 'assistant'; content: string }[],
@@ -183,70 +272,41 @@ export async function getAIResponse(
   if (!apiKey) {
     console.warn('[aiService] OPENAI_API_KEY não configurada. Usando resposta de fallback.')
     return {
-      reply: "Olá! No momento nosso sistema de inteligência artificial está em manutenção. Por favor, aguarde que um atendente humano irá falar com você em instantes! 👍",
+      reply: 'Olá! No momento nosso sistema de inteligência artificial está em manutenção. Por favor, aguarde que um atendente humano irá falar com você em instantes.',
       status: 'atendimento_humano'
     }
   }
 
-  // 1) Busca categorias exclusivamente da API
-  const categories = await getCategories()
+  const [categories, regras] = await Promise.all([getCategories(), getRegrasIA()])
   console.log('[aiService] Categorias da API:', categories.length)
+  console.log('[aiService] Regras IA da API:', regras.length)
 
-  // 2) Classifica a intenção do usuário (já validada contra a lista da API)
-  const classification = await classifyIntent(latestMessage, history, categories, apiKey)
+  const classification = await classifyIntent(latestMessage, history, categories, regras, apiKey)
   console.log('[aiService] Classificação da busca:', classification)
 
   let produtos: Produto[] = []
-  let contextInstruction = ""
   let isSuggested = false
 
   if (classification.exactMatch) {
-    // 3) Busca os produtos exatos da categoria identificada (nome oficial da API)
     produtos = (await useProdutos(classification.exactMatch)).data
-    
-    const produtosTxt = produtos.map(p => 
-      `- Título: ${p.nome}\n  Categoria: ${p.descricaoCurta}\n  Valor: R$ ${p.preco}\n  Imagem: ${p.imagemURL}`
-    ).join('\n\n')
-
-    contextInstruction = `O cliente está buscando produtos da categoria específica "${classification.exactMatch}".
-Use EXATAMENTE este nome de categoria se precisar mencioná-la: "${classification.exactMatch}".
-Abaixo estão os produtos reais encontrados no estoque da loja para esta categoria. 
-Nós vamos enviar as imagens destes produtos separadamente no WhatsApp com o formato "titulo - descrição - valor" no rodapé/caption.
-Escreva um texto de introdução muito direto e conciso, informando que encontrou as opções de "${classification.exactMatch}".
-
-PRODUTOS ENCONTRADOS NO ESTOQUE:
-${produtosTxt || 'Nenhum produto correspondente retornado da API.'}
-`
-  } else if (classification.suggestedCategories && classification.suggestedCategories.length > 0) {
-    // 4) Se for uma busca abrangente, sugere categorias relevantes
+  } else if (classification.suggestedCategories.length > 0) {
     isSuggested = true
-    contextInstruction = `A busca do cliente foi abrangente. 
-Nós vamos enviar as categorias sugeridas separadamente como mensagens individuais no WhatsApp.
-Escreva APENAS uma frase de introdução muito objetiva, perguntando qual destas categorias ele gostaria de ver. 
-IMPORTANTE: NUNCA liste as categorias no seu texto de reply, pois nós faremos isso programaticamente.
-IMPORTANTE: NUNCA invente nomes de categorias.`
   } else {
-    // 5) Sem relação direta
-    const isSearchingProduct = latestMessage.toLowerCase().includes('quero') || 
-                              latestMessage.toLowerCase().includes('busco') || 
-                              latestMessage.toLowerCase().includes('tem') || 
-                              latestMessage.toLowerCase().includes('vende') || 
-                              latestMessage.toLowerCase().includes('corda') ||
-                              latestMessage.toLowerCase().includes('produto')
-
-    if (isSearchingProduct && categories.length > 0) {
+    const lookingForProduct = /quero|busco|tem|vende|corda|produto|categoria/i.test(latestMessage)
+    if (lookingForProduct && categories.length > 0) {
       isSuggested = true
-      contextInstruction = `O cliente está procurando por algo que não corresponde diretamente a nenhuma de nossas categorias. 
-Nós vamos enviar a lista de categorias da API separadamente como mensagens individuais no WhatsApp.
-Escreva APENAS uma frase de introdução educada e muito curta, explicando que não encontramos a correspondência exata, e pergunte se ele deseja ver alguma de nossas categorias disponíveis.
-IMPORTANTE: NUNCA liste as categorias no seu texto de reply, pois nós faremos isso programaticamente.
-IMPORTANTE: NUNCA invente nomes de categorias.`
       classification.suggestedCategories = categories
-    } else {
-      contextInstruction = `O cliente iniciou uma conversa casual ou fez uma pergunta geral (como formas de pagamento, frete, falar com humano). Responda de forma extremamente concisa e objetiva de acordo com as regras gerais da loja.
-Se mencionar categorias de produtos, use APENAS nomes desta lista oficial: ${categories.slice(0, 20).join(', ') || '(nenhuma categoria carregada)'}.`
     }
   }
+
+  const contextInstruction = buildSearchContext({
+    exactMatch: classification.exactMatch,
+    suggestedCategories: classification.suggestedCategories,
+    produtos,
+    categories,
+    isSuggested,
+    latestMessage
+  })
 
   const systemPrompt = `Você é a inteligência artificial de atendimento da loja online "${AGENCY_INFO.nome}".
 Sobre a loja:
@@ -255,29 +315,19 @@ Sobre a loja:
 - Contato: ${AGENCY_INFO.contato}
 - Políticas e Envios: ${AGENCY_INFO.valoresSobre}
 
-O nome do cliente é: ${contactName || 'Cliente'}. Use o primeiro nome dele de forma natural nas respostas se achar adequado.
+O nome do cliente é: ${contactName || 'Cliente'}.
 
-CONTEXTO DE PRODUTOS E BUSCA DO CLIENTE:
+CONTEXTO DINÂMICO DESTA MENSAGEM:
 ${contextInstruction}
 
-REGRAS DE CONVERSAÇÃO E FLUXO:
-1. O status atual da conversa é "bot".
-2. Diretriz de Tom de Voz: Seja extremamente objetivo, curto e direto. NUNCA use emojis em hipótese alguma. Vá direto ao ponto.
-3. Se o cliente disser apenas "olá", "bom dia" ou perguntar se a loja está aberta, responda de forma muito curta e direta. Mantenha o status "bot".
-4. REQUISITO CRÍTICO: Não invente produtos, preços ou nomes de categorias. Categorias só existem se vierem da API/contexto acima.
-5. Se a lista de produtos da categoria estiver vazia, informe que não há estoque no momento e diga que vai transferir para um atendente verificar encomendas. Nesse caso, mude o status para "atendimento_humano".
-6. Se o cliente demonstrar intenção clara de fechar/comprar um dos produtos apresentados, peça o endereço de entrega de forma direta. Mantenha o status "bot".
-7. Se o cliente fornecer o endereço de entrega, diga apenas que um consultor entrará em contato em instantes para finalizar a compra e enviar os dados de pagamento. Altere o status para "qualificado".
+${formatRegrasPrompt(regras)}
 
-FORMATO DE RESPOSTA OBRIGATÓRIO (responda estritamente em JSON puro, sem markdown \`\`\`json):
+FORMATO DE RESPOSTA OBRIGATÓRIO (JSON puro, sem markdown):
 {
-  "reply": "O texto da resposta em português para enviar no WhatsApp do cliente. Super objetivo, conciso, sem emojis.",
+  "reply": "Texto em português para o WhatsApp do cliente",
   "status": "bot" | "atendimento_humano" | "qualificado"
-}
+}`
 
-Importante: Apenas o JSON puro na resposta.`
-
-  // Monta as mensagens para a API
   const apiMessages = [
     { role: 'system', content: systemPrompt },
     ...history.map(h => ({
@@ -305,25 +355,11 @@ Importante: Apenas o JSON puro na resposta.`
     })
 
     const contentStr = response?.choices?.[0]?.message?.content?.trim() ?? ''
-    if (!contentStr) {
-      throw new Error('Resposta vazia da OpenAI')
-    }
+    if (!contentStr) throw new Error('Resposta vazia da OpenAI')
 
-    let cleanJson = contentStr
-    if (cleanJson.startsWith('```json')) {
-      cleanJson = cleanJson.substring(7)
-    } else if (cleanJson.startsWith('```')) {
-      cleanJson = cleanJson.substring(3)
-    }
-    if (cleanJson.endsWith('```')) {
-      cleanJson = cleanJson.substring(0, cleanJson.length - 3)
-    }
-    cleanJson = cleanJson.trim()
+    const parsed = JSON.parse(stripCodeFences(contentStr))
+    const replyText = parsed.reply || 'Desculpe, não entendi muito bem. Poderia repetir?'
 
-    const parsed = JSON.parse(cleanJson)
-    const replyText = parsed.reply || "Desculpe, não entendi muito bem. Poderia repetir?"
-    
-    // Constrói a lista de mensagens a enviar
     const messagesToSend: { type: 'text' | 'image'; text?: string; imageUrl?: string }[] = []
 
     if (replyText) {
@@ -331,10 +367,7 @@ Importante: Apenas o JSON puro na resposta.`
     }
 
     if (classification.exactMatch && produtos.length > 0) {
-      // Adiciona cada produto como mensagem de imagem com a descrição formatada
-      // Limitando a 5 produtos para evitar spam
-      const limitProdutos = produtos.slice(0, 5)
-      for (const p of limitProdutos) {
+      for (const p of produtos.slice(0, 5)) {
         messagesToSend.push({
           type: 'image',
           imageUrl: p.imagemURL,
@@ -342,13 +375,8 @@ Importante: Apenas o JSON puro na resposta.`
         })
       }
     } else if (isSuggested && classification.suggestedCategories.length > 0) {
-      // Adiciona cada categoria recomendada separadamente (já validadas pela API)
-      const limitCategories = classification.suggestedCategories.slice(0, 8)
-      for (const cat of limitCategories) {
-        messagesToSend.push({
-          type: 'text',
-          text: cat
-        })
+      for (const cat of classification.suggestedCategories.slice(0, 8)) {
+        messagesToSend.push({ type: 'text', text: cat })
       }
     }
 
@@ -360,7 +388,7 @@ Importante: Apenas o JSON puro na resposta.`
   } catch (e) {
     console.error('[aiService] Erro ao chamar a API da OpenAI:', e)
     return {
-      reply: "Desculpe-me, tive uma instabilidade ao processar sua resposta. Pode repetir, por favor?",
+      reply: 'Desculpe-me, tive uma instabilidade ao processar sua resposta. Pode repetir, por favor?',
       status: 'bot'
     }
   }
