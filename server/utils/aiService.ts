@@ -367,7 +367,8 @@ FORMATO DE RESPOSTA OBRIGATÓRIO (JSON puro, sem markdown):
     }
 
     if (classification.exactMatch && produtos.length > 0) {
-      for (const p of produtos.slice(0, 5)) {
+      // Envia todos os produtos retornados pela API (sem corte artificial)
+      for (const p of produtos) {
         messagesToSend.push({
           type: 'image',
           imageUrl: p.imagemURL,
@@ -375,7 +376,7 @@ FORMATO DE RESPOSTA OBRIGATÓRIO (JSON puro, sem markdown):
         })
       }
     } else if (isSuggested && classification.suggestedCategories.length > 0) {
-      for (const cat of classification.suggestedCategories.slice(0, 8)) {
+      for (const cat of classification.suggestedCategories) {
         messagesToSend.push({ type: 'text', text: cat })
       }
     }
