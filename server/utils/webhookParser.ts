@@ -56,6 +56,27 @@ function extractContent(
       return { kind: 'document', body: m.document?.filename, caption: m.document?.caption, mediaId: m.document?.id }
     case 'sticker':
       return { kind: 'sticker', mediaId: m.sticker?.id }
+    case 'location':
+    case 'live_location': {
+      // Cloud API: pin estático com lat/lng (+ name/address opcionais).
+      // Live location contínua geralmente NÃO é retransmitida em tempo real
+      // pela API oficial — chega como snapshot (e às vezes updates pontuais).
+      const loc = m.location ?? m.live_location ?? {}
+      const latitude = Number(loc.latitude)
+      const longitude = Number(loc.longitude)
+      const payload = {
+        latitude,
+        longitude,
+        name: loc.name ? String(loc.name) : undefined,
+        address: loc.address ? String(loc.address) : undefined,
+        live: m.type === 'live_location' || Boolean(loc.live),
+      }
+      return {
+        kind: 'location',
+        body: JSON.stringify(payload),
+        caption: payload.name || payload.address || undefined,
+      }
+    }
     default:
       return { kind: 'text', body: `[tipo não suportado: ${m?.type}]` }
   }
@@ -149,6 +170,8 @@ export function previewFor(kind: Kind, body?: string, caption?: string): string 
       return '📄 ' + (body || 'Documento')
     case 'sticker':
       return 'Figurinha'
+    case 'location':
+      return caption ? `📍 ${caption}` : '📍 Localização'
     default:
       return body ?? ''
   }

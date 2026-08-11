@@ -47,7 +47,7 @@ export type Direcao = 'in' | 'out'
 export type Status = 'sent' | 'delivered' | 'read'
 
 /** Tipos de balão suportados */
-export type Kind = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker'
+export type Kind = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'location'
 
 /** Campos comuns a todo balão */
 export interface BaseBalao {
@@ -122,6 +122,17 @@ export interface StickerMensagem extends BaseBalao {
   url: string
 }
 
+/** Localização (pin do WhatsApp) */
+export interface LocationMensagem extends BaseBalao {
+  kind: 'location'
+  latitude: number
+  longitude: number
+  name?: string
+  address?: string
+  /** true quando o payload indicar live location (snapshot) */
+  live?: boolean
+}
+
 /** União de todos os balões */
 export type MensagemBalao =
   | TextMensagem
@@ -130,5 +141,6 @@ export type MensagemBalao =
   | VideoMensagem
   | DocumentMensagem
   | StickerMensagem
+  | LocationMensagem
 
 export type Mensagem = MensagemData | MensagemBalao

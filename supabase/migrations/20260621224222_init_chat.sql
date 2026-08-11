@@ -48,7 +48,7 @@ create table if not exists public.messages (
   wa_message_id   text unique,
 
   direction       text not null check (direction in ('in','out')),
-  kind            text not null check (kind in ('text','image','audio','video','document','sticker')),
+  kind            text not null check (kind in ('text','image','audio','video','document','sticker','location')),
 
   from_wa_id      text,                               -- messages[].from / echoes[].from
   to_wa_id        text,                               -- echoes[].to

@@ -12,5 +12,6 @@ defineProps<{ msg: MensagemBalao }>()
     <VideoMessage v-else-if="msg.kind === 'video'" :msg="msg" />
     <DocumentMessage v-else-if="msg.kind === 'document'" :msg="msg" />
     <StickerMessage v-else-if="msg.kind === 'sticker'" :msg="msg" />
+    <LocationMessage v-else-if="msg.kind === 'location'" :msg="msg" />
   </div>
 </template>
