@@ -30,4 +30,33 @@ export default defineNuxtPlugin(() => {
       chat.onRealtimeStatus(data.waMessageId, data.status)
     }
   })
+
+  /**
+   * Recuperação de mensagens perdidas quando o websocket cai — o cenário clássico
+   * da PWA: ao voltar do background o socket foi derrubado e os eventos que
+   * chegaram nesse intervalo nunca foram entregues. Ressincronizamos ao:
+   *  - reconectar o Pusher (state connected)
+   *  - a aba voltar a ficar visível / receber foco
+   *  - a rede voltar (online)
+   * Um pequeno debounce evita rajadas (visibilitychange + focus disparam juntos).
+   */
+  let t: ReturnType<typeof setTimeout> | null = null
+  const resync = () => {
+    if (t) clearTimeout(t)
+    t = setTimeout(() => chat.resync(), 150)
+  }
+
+  // só ressincroniza em RECONEXÕES — a 1ª conexão é coberta pelo load inicial
+  let jaConectou = false
+  pusher.connection.bind('state_change', ({ current }: { current: string }) => {
+    if (current !== 'connected') return
+    if (jaConectou) resync()
+    jaConectou = true
+  })
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') resync()
+  })
+  window.addEventListener('focus', resync)
+  window.addEventListener('online', resync)
 })

@@ -11,6 +11,17 @@ const ABAS: AbaKey[] = ['entrada', 'qualificado', 'pedidos', 'atendimento_humano
 interface MsgCache {
   items: Mensagem[]
   hasMore: boolean
+  /** maior wa_timestamp (ISO) já visto — base do sync incremental (?since=) */
+  lastTs?: string
+}
+
+/** Maior wa_timestamp (ISO) de um lote de mensagens. */
+function maxWaTs(rows: MessageRow[]): string | null {
+  let max: string | null = null
+  for (const r of rows) {
+    if (r.wa_timestamp && (!max || r.wa_timestamp > max)) max = r.wa_timestamp
+  }
+  return max
 }
 
 /** Uma fila de conversas por aba, paginada de forma independente no servidor. */
@@ -167,6 +178,7 @@ export const useChatStore = defineStore('chat', () => {
       msgCache[id] = {
         items: rows.map(mapMensagem).reverse(),
         hasMore: rows.length === MSG_PAGE,
+        lastTs: maxWaTs(rows) ?? undefined,
       }
     } catch (e) {
       console.error('[chat] mensagens:', e)
@@ -199,7 +211,7 @@ export const useChatStore = defineStore('chat', () => {
    * Insere uma mensagem no cache da conversa e atualiza a prévia/posição na lista.
    * Usado tanto pelo envio otimista quanto pelo recebimento via Pusher.
    */
-  function pushNoCache(conversationId: string, msg: MensagemBalao) {
+  function pushNoCache(conversationId: string, msg: MensagemBalao, waTimestamp?: string | null) {
     const cache = msgCache[conversationId]
     if (!cache) return
     // dedup por wamid (evita duplicar echo/reentrega do webhook)
@@ -207,6 +219,8 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
     cache.items = [...cache.items, msg]
+    // avança o marcador do sync incremental (base do ?since=)
+    if (waTimestamp && (!cache.lastTs || waTimestamp > cache.lastTs)) cache.lastTs = waTimestamp
   }
 
   /** Atualiza prévia/horário e move pro topo, na fila em que a conversa estiver. */
@@ -282,7 +296,7 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    pushNoCache(conv.id, msg)
+    pushNoCache(conv.id, msg, msgRow.wa_timestamp)
   }
 
   function onRealtimeStatus(waMessageId: string, status: string) {
@@ -297,6 +311,60 @@ export const useChatStore = defineStore('chat', () => {
         break
       }
     }
+  }
+
+  /* ---------- sync incremental (reconexão / retorno de foco) ---------- */
+  let sincronizando = false
+
+  /**
+   * Puxa as mensagens que chegaram na conversa aberta enquanto o websocket
+   * esteve fora (PWA em background). Usa ?since=<lastTs> quando possível.
+   */
+  async function syncActive() {
+    const id = activeId.value
+    if (!id) return
+    const cache = msgCache[id]
+    // conversa aberta mas ainda sem cache -> carrega do zero
+    if (!cache) {
+      await loadFirstMensagens(id)
+      return
+    }
+    if (sincronizando) return
+    sincronizando = true
+    try {
+      const since = cache.lastTs
+      const rows = await $fetch<MessageRow[]>(`/api/conversations/${id}/messages`, {
+        query: since ? { since } : { limit: MSG_PAGE, offset: 0 },
+      })
+      if (!rows.length) return
+      // dedup por wamid contra o que já está no cache
+      const existentes = new Set(
+        cache.items
+          .filter((m): m is MensagemBalao => m.type === 'msg' && !!m.waMessageId)
+          .map((m) => m.waMessageId as string),
+      )
+      const novos = rows
+        .slice()
+        .reverse() // DESC -> ordem cronológica
+        .map(mapMensagem)
+        .filter((m) => !(m.type === 'msg' && m.waMessageId && existentes.has(m.waMessageId)))
+      if (novos.length) cache.items = [...cache.items, ...novos]
+      const maxTs = maxWaTs(rows)
+      if (maxTs && (!cache.lastTs || maxTs > cache.lastTs)) cache.lastTs = maxTs
+    } catch (e) {
+      console.error('[chat] sync ativo:', e)
+    } finally {
+      sincronizando = false
+    }
+  }
+
+  /**
+   * Ressincroniza tudo após reconexão/retorno de foco: mensagens perdidas da
+   * conversa aberta + recarrega a fila da aba atual (novas conversas, prévias,
+   * status atualizados).
+   */
+  async function resync() {
+    await Promise.all([syncActive(), carregarFila(abaAtiva.value, true)])
   }
 
   return {
@@ -319,5 +387,7 @@ export const useChatStore = defineStore('chat', () => {
     sendMensagem,
     onRealtimeMessage,
     onRealtimeStatus,
+    syncActive,
+    resync,
   }
 })
