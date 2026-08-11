@@ -18,6 +18,7 @@ export type ConversationRow = {
   contact_user_id: string | null
   last_message_preview: string | null
   last_message_at: string | null
+  pedido_confirmado_at: string | null
   unread_count: number
   created_at: string
   updated_at: string

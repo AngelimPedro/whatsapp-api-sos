@@ -31,10 +31,40 @@ const novaFila = (): FilaConversas => ({
   loading: false,
 })
 
-/** Em qual aba uma conversa cai, a partir do status. */
-function abaDe(status: ConversationRow['status'] | null | undefined): AbaKey {
-  if (!status || status === 'bot') return 'entrada'
-  return status
+/**
+ * Retorna true se o timestamp ISO estiver dentro do dia corrente no fuso de Brasília (UTC-3).
+ * Espelha a lógica de `inicioDoDiaBrasilia()` do servidor.
+ */
+function isHojeBrasilia(isoTimestamp: string | null | undefined): boolean {
+  if (!isoTimestamp) return false
+  const OFFSET_MS = -3 * 60 * 60 * 1000 // UTC-3
+  const agora = new Date()
+  const localMs = agora.getTime() + OFFSET_MS
+  const localDate = new Date(localMs)
+  const inicioDoDia = new Date(
+    Date.UTC(localDate.getUTCFullYear(), localDate.getUTCMonth(), localDate.getUTCDate()) - OFFSET_MS,
+  )
+  return new Date(isoTimestamp) >= inicioDoDia
+}
+
+/**
+ * Retorna as abas em que uma conversa deve aparecer de acordo com o status e a data.
+ * - Entrada: SEMPRE (todas as conversas)
+ * - Pedidos: somente se status === 'pedidos' e a última mensagem for de hoje
+ * - Demais abas: pelo status exato
+ */
+function abasDe(conv: ConversationRow): AbaKey[] {
+  const { status, pedido_confirmado_at } = conv
+  const abas: AbaKey[] = ['entrada'] // entrada sempre recebe tudo
+
+  if (status === 'pedidos') {
+    // Só entra na fila de Pedidos se o gatilho "resumo do pedido" foi de hoje
+    if (isHojeBrasilia(pedido_confirmado_at)) abas.push('pedidos')
+  } else if (status && status !== 'bot') {
+    abas.push(status as AbaKey)
+  }
+
+  return abas
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -229,23 +259,24 @@ export const useChatStore = defineStore('chat', () => {
   function onRealtimeMessage(convRow: ConversationRow, msgRow: MessageRow) {
     const msg = mapMensagem(msgRow) as MensagemBalao
     const conv = mapConversa(convRow)
-    const destino = abaDe(convRow.status)
+    // Conjunto de abas em que esta conversa deve aparecer (pode ser múltiplas)
+    const destinos = new Set(abasDe(convRow))
 
-    // o status pode ter mudado no meio da conversa (ex: bot -> pedidos), então
-    // a conversa entra na fila de destino e sai de qualquer outra em que esteja
     for (const key of ABAS) {
       const fila = filas[key]
       const idx = fila.items.findIndex((c) => c.id === conv.id)
 
-      if (key === destino) {
+      if (destinos.has(key)) {
+        // conversa deve estar nesta fila: atualiza ou insere no topo
         if (idx >= 0) {
           fila.items = [conv, ...fila.items.filter((_, i) => i !== idx)]
         } else if (fila.loaded) {
-          // fila ainda não carregada não recebe nada: seria um furo na paginação
+          // só insere em filas já carregadas (evitar furos na paginação)
           fila.items = [conv, ...fila.items]
           fila.total++
         }
       } else if (idx >= 0) {
+        // conversa saiu desta fila (ex: pedido de ontem não vai p/ Pedidos)
         fila.items = fila.items.filter((_, i) => i !== idx)
         fila.total = Math.max(0, fila.total - 1)
       }

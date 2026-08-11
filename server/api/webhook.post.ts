@@ -304,6 +304,7 @@ async function handleResumoDoPedido(
     .from('conversations')
     .update({
       status: 'pedidos',
+      pedido_confirmado_at: new Date().toISOString(),
       reminder_sent: false,
       last_message_preview: RESUMO_PEDIDO_REPLY,
       last_message_at: new Date().toISOString(),

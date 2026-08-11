@@ -1,19 +1,33 @@
 /**
  * Lista de conversas paginada (20/página por padrão), filtrada por aba.
  *
- * O filtro é feito aqui e não no cliente: as abas são filas independentes e
- * uma fila movimentada (Entrada) não pode empurrar as outras para fora da
- * página. Sem isso, a aba Pedidos pode vir vazia só porque as 20 conversas
- * mais recentes eram todas de outro status.
+ * Regras de filtro:
+ * - entrada     → TODAS as conversas (independente do status)
+ * - pedidos     → status = 'pedidos' E last_message_at no dia de hoje (UTC-3 / Brasília)
+ * - demais abas → filtro exato por status
+ *
+ * Dessa forma, no dia seguinte as conversas de pedidos somem da aba Pedidos
+ * automaticamente e ficam apenas na Entrada.
  */
 
-/** aba -> status correspondente na tabela. */
+/** aba -> status correspondente na tabela (não usado por 'entrada'). */
 const STATUS_POR_ABA: Record<string, string> = {
-  entrada: 'bot',
   qualificado: 'qualificado',
   pedidos: 'pedidos',
   atendimento_humano: 'atendimento_humano',
   desqualificado: 'desqualificado',
+}
+
+/** Retorna o início do dia corrente no fuso de Brasília (UTC-3) como ISO UTC. */
+function inicioDoDiaBrasilia(): string {
+  const OFFSET_MS = -3 * 60 * 60 * 1000 // UTC-3
+  const agora = new Date()
+  const localMs = agora.getTime() + OFFSET_MS
+  const localDate = new Date(localMs)
+  // Zera hora/minuto/segundo no horário local → converte de volta p/ UTC
+  const inicioLocalMs =
+    Date.UTC(localDate.getUTCFullYear(), localDate.getUTCMonth(), localDate.getUTCDate()) - OFFSET_MS
+  return new Date(inicioLocalMs).toISOString()
 }
 
 export default defineEventHandler(async (event) => {
@@ -22,7 +36,8 @@ export default defineEventHandler(async (event) => {
   const offset = Math.max(Number(q.offset) || 0, 0)
   const aba = typeof q.aba === 'string' && q.aba ? q.aba : null
 
-  if (aba && !STATUS_POR_ABA[aba]) {
+  const abasValidas = ['entrada', ...Object.keys(STATUS_POR_ABA)]
+  if (aba && !abasValidas.includes(aba)) {
     throw createError({ statusCode: 400, statusMessage: `aba desconhecida: ${aba}` })
   }
 
@@ -31,12 +46,16 @@ export default defineEventHandler(async (event) => {
   // count exato p/ o contador da aba ativa no header
   let query = supabase.from('conversations').select('*', { count: 'exact' })
 
-  if (aba) {
-    query =
-      aba === 'entrada'
-        ? // linhas antigas podem não ter status; contam como Entrada
-          query.or(`status.eq.${STATUS_POR_ABA[aba]},status.is.null`)
-        : query.eq('status', STATUS_POR_ABA[aba]!)
+  if (aba === 'entrada') {
+    // Entrada = todas as conversas, sem filtro de status
+    // (nenhum .eq/.or adicional)
+  } else if (aba === 'pedidos') {
+    // Pedidos = status 'pedidos' cujo gatilho "resumo do pedido" foi disparado HOJE
+    query = query
+      .eq('status', 'pedidos')
+      .gte('pedido_confirmado_at', inicioDoDiaBrasilia())
+  } else if (aba) {
+    query = query.eq('status', STATUS_POR_ABA[aba]!)
   }
 
   const { data, error, count } = await query
