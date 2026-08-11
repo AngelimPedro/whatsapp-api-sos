@@ -26,7 +26,7 @@ function enviar() {
 <template>
   <!-- barra flutuante -->
   <div
-    class="absolute left-0 right-0 bottom-[max(0.5rem,env(safe-area-inset-bottom))] md:bottom-3.5 flex justify-center px-2 md:px-6 z-5"
+    class="absolute left-0 right-0 bottom-[calc(env(safe-area-inset-bottom)+0.875rem)] md:bottom-3.5 flex justify-center px-2 md:px-6 z-5"
   >
     <div
       class="w-full flex items-end gap-2.5 bg-input-bar-bg rounded-[26px] shadow-[0_2px_10px_rgba(11,20,26,0.16)] px-2.5 py-1.5"
@@ -41,12 +41,14 @@ function enviar() {
         v-html="icons.sticker"
       />
 
+      <!-- 16px no mobile é obrigatório: abaixo disso o Safari do iOS dá zoom
+           automático ao focar o campo. No desktop volta pros 15px do layout. -->
       <textarea
         ref="fieldEl"
         v-model="text"
         rows="1"
         placeholder="Digite uma mensagem"
-        class="flex-1 resize-none bg-transparent border-none outline-none text-text-primary text-[15px] leading-snug px-1.5 py-2.25 max-h-30 placeholder:text-text-secondary"
+        class="flex-1 resize-none bg-transparent border-none outline-none text-text-primary text-[16px] md:text-[15px] leading-snug px-1.5 py-2.25 max-h-30 placeholder:text-text-secondary"
         @input="autoGrow"
         @keydown.enter.exact.prevent="enviar"
       />

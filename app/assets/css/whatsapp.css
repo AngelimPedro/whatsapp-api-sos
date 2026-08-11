@@ -145,6 +145,9 @@ html[data-theme='light'] {
 html,
 body {
   height: 100%;
+  /* no mobile, impede o "puxão" elástico de arrastar a página inteira — é o que
+     fazia a barra do contato sair da tela ao rolar a conversa */
+  overscroll-behavior: none;
 }
 
 body {
@@ -158,6 +161,10 @@ body {
 }
 
 /* scrollbar fina (usar a classe .scroll nos contêineres roláveis) */
+.scroll {
+  /* o scroll para no fim da lista em vez de encadear para a página */
+  overscroll-behavior: contain;
+}
 .scroll::-webkit-scrollbar {
   width: 6px;
 }

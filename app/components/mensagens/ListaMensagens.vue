@@ -13,15 +13,26 @@ const emit = defineEmits<{ loadOlder: [] }>()
 const scrollEl = ref<HTMLElement | null>(null)
 let pendingOlder = false
 let prevHeight = 0
+// distância até a última mensagem, atualizada a cada rolagem — é o que permite
+// devolver o leitor ao mesmo ponto quando o teclado abre ou fecha
+let distanciaDoFim = 0
 
 // scroll pro fim (mensagem mais recente)
 function scrollToBottom() {
   const el = scrollEl.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (!el) return
+  el.scrollTop = el.scrollHeight
+  distanciaDoFim = 0
+}
+
+function guardaDistanciaDoFim() {
+  const el = scrollEl.value
+  if (el) distanciaDoFim = el.scrollHeight - el.scrollTop - el.clientHeight
 }
 
 // ao chegar perto do topo, pede mensagens mais antigas
 function onScroll() {
+  guardaDistanciaDoFim()
   const el = scrollEl.value
   if (!el || !props.hasMore || pendingOlder) return
   if (el.scrollTop < 120) {
@@ -30,6 +41,25 @@ function onScroll() {
     emit('loadOlder')
   }
 }
+
+/**
+ * O teclado do celular encolhe/devolve a área visível, e sem isso o conteúdo
+ * reaparece num ponto diferente da conversa. Reposiciona mantendo a mesma
+ * distância até o fim: quem estava na última mensagem continua nela, quem
+ * estava lendo o histórico continua no mesmo trecho.
+ */
+function restauraDistanciaDoFim() {
+  const el = scrollEl.value
+  if (!el || el.clientHeight <= 0) return
+  el.scrollTop = el.scrollHeight - el.clientHeight - distanciaDoFim
+}
+
+onMounted(() => {
+  window.visualViewport?.addEventListener('resize', restauraDistanciaDoFim)
+})
+onBeforeUnmount(() => {
+  window.visualViewport?.removeEventListener('resize', restauraDistanciaDoFim)
+})
 
 // trocou de conversa, ou o painel reapareceu no mobile -> rola pro fim
 watch(
@@ -67,7 +97,7 @@ onMounted(async () => {
 <template>
   <div
     ref="scrollEl"
-    class="flex-1 min-h-0 overflow-y-auto pt-3.5 px-3 md:px-16 pb-20 md:pb-24 relative scroll flex flex-col"
+    class="flex-1 min-h-0 overflow-y-auto pt-3.5 px-3 md:px-16 pb-24 relative scroll flex flex-col"
     @scroll.passive="onScroll"
   >
     <!-- glow vermelho da marca (SOS HUB) -->
