@@ -86,6 +86,24 @@ O `changes[].field` indica o tipo de evento:
 > Vídeo, documento e sticker seguem o mesmo formato (`type` + objeto homônimo com
 > `id`/`url`/`mime_type`; documento traz também `filename`).
 
+## 3b. Mensagem recebida — localização
+
+```jsonc
+{
+  "type": "location",
+  "location": {
+    "latitude": -1.4558,
+    "longitude": -48.4902,
+    "name": "Opcional",
+    "address": "Opcional"
+  }
+}
+```
+
+> A Datafy/Meta entrega o pin como snapshot (`latitude`/`longitude`). Localização
+> em tempo real do app do cliente geralmente chega como um (ou poucos) pins — a
+> API oficial **não** retransmite o streaming contínuo tipo WhatsApp consumidor.
+
 ## 4. Mensagem enviada pelo app Business (echo)
 
 `field: smb_message_echoes` · `value.message_echoes[]` → `direction: out`

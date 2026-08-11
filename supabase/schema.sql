@@ -60,7 +60,7 @@ create table if not exists public.messages (
     foreign key (conversation_id) references public.conversations (id) on delete cascade,
   constraint messages_direction_check check (direction = any (array['in'::text, 'out'::text])),
   constraint messages_kind_check check (
-    kind = any (array['text'::text,'image'::text,'audio'::text,'video'::text,'document'::text,'sticker'::text])
+    kind = any (array['text'::text,'image'::text,'audio'::text,'video'::text,'document'::text,'sticker'::text,'location'::text])
   ),
   constraint messages_status_check check (
     status = any (array['sent'::text,'delivered'::text,'read'::text,'failed'::text])

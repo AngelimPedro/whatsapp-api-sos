@@ -72,8 +72,42 @@ export function mapMensagem(row: MessageRow): Mensagem {
     }
     case 'sticker':
       return { ...base, kind: 'sticker', url }
+    case 'location': {
+      const parsed = parseLocationBody(row.body)
+      return {
+        ...base,
+        kind: 'location',
+        latitude: parsed.latitude,
+        longitude: parsed.longitude,
+        name: parsed.name || caption,
+        address: parsed.address,
+        live: parsed.live,
+      }
+    }
     case 'text':
     default:
       return { ...base, kind: 'text', text: row.body ?? '' }
+  }
+}
+
+function parseLocationBody(body: string | null): {
+  latitude: number
+  longitude: number
+  name?: string
+  address?: string
+  live?: boolean
+} {
+  if (!body) return { latitude: 0, longitude: 0 }
+  try {
+    const data = JSON.parse(body)
+    return {
+      latitude: Number(data.latitude) || 0,
+      longitude: Number(data.longitude) || 0,
+      name: data.name ? String(data.name) : undefined,
+      address: data.address ? String(data.address) : undefined,
+      live: Boolean(data.live),
+    }
+  } catch {
+    return { latitude: 0, longitude: 0 }
   }
 }
