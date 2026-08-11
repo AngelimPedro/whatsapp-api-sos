@@ -100,7 +100,16 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
   // 5) publica no Pusher pro front atualizar ao vivo
   if (convRow) await publishNewMessage(convRow, inserted)
 
-  // 6) Se for mensagem recebida de cliente e o status for 'bot', responde via IA
+  // 6) Gatilho "resumo do pedido": resposta fixa + handoff definitivo pro humano.
+  //    Tratado aqui (e não no prompt da IA) porque o texto e o status precisam ser
+  //    determinísticos. Depois disso a conversa fica em 'pedidos' e nem a IA
+  //    (passo 7) nem o agendador de inatividade voltam a enviar nada.
+  if (isIncoming && currentStatus === 'bot' && isResumoDoPedido(ev.body || ev.caption)) {
+    await handleResumoDoPedido(supabase, ev, conversationId)
+    return
+  }
+
+  // 7) Se for mensagem recebida de cliente e o status for 'bot', responde via IA
   if (isIncoming && currentStatus === 'bot') {
     try {
       // Busca as últimas 7 mensagens da conversa (para pegar o histórico e o input atual)
@@ -240,11 +249,87 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
   }
 }
 
+/** Texto exato enviado quando o lead manda o resumo do pedido. */
+const RESUMO_PEDIDO_REPLY =
+  'Beleza!! Manda teu endereço por escrito e se for possível, para facilitar, a tua localização fixa!'
+
+/** Detecta a expressão "resumo do pedido" ignorando caixa e acentuação. */
+function isResumoDoPedido(text?: string | null): boolean {
+  if (!text) return false
+  const normalized = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+  return normalized.includes('resumo do pedido')
+}
+
+/**
+ * Envia a resposta fixa do gatilho, persiste a mensagem e move a conversa
+ * para 'pedidos' (atendimento 100% humano a partir daqui).
+ */
+async function handleResumoDoPedido(
+  supabase: ReturnType<typeof useSupabaseServer>,
+  ev: ParsedMessage,
+  conversationId: string,
+) {
+  console.log(`[webhook] gatilho "resumo do pedido" na conversa ${conversationId} -> status 'pedidos'`)
+
+  let wamid: string | null = null
+  try {
+    wamid = await sendTextMessage(ev.phoneNumberId!, ev.contactWaId!, RESUMO_PEDIDO_REPLY)
+  } catch (sendErr) {
+    console.error('[webhook] erro ao enviar resposta do gatilho de pedido:', sendErr)
+  }
+
+  const { data: insertedMsg, error: insertErr } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversationId,
+      wa_message_id: wamid || `bot-pedido-${Date.now()}`,
+      direction: 'out',
+      kind: 'text',
+      body: RESUMO_PEDIDO_REPLY,
+      status: wamid ? 'sent' : null,
+      wa_timestamp: new Date().toISOString(),
+    })
+    .select('*')
+    .single()
+
+  if (insertErr) {
+    console.error('[webhook] erro ao persistir resposta do gatilho de pedido:', insertErr.message)
+    return
+  }
+
+  const { data: updatedConv, error: updateErr } = await supabase
+    .from('conversations')
+    .update({
+      status: 'pedidos',
+      reminder_sent: false,
+      last_message_preview: RESUMO_PEDIDO_REPLY,
+      last_message_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId)
+    .select('*')
+    .single()
+
+  if (updateErr) {
+    console.error('[webhook] erro ao mover conversa para o status pedidos:', updateErr.message)
+    return
+  }
+
+  if (updatedConv && insertedMsg) {
+    await publishNewMessage(updatedConv, insertedMsg)
+  }
+}
+
 /** Garante a conversa (insert/update) e retorna o id e status. */
 async function upsertConversation(
   supabase: ReturnType<typeof useSupabaseServer>,
   ev: ParsedMessage,
-): Promise<{ id: string; status: 'bot' | 'atendimento_humano' | 'qualificado' | 'desqualificado' } | null> {
+): Promise<{
+  id: string
+  status: 'bot' | 'atendimento_humano' | 'qualificado' | 'desqualificado' | 'pedidos'
+} | null> {
   const row: Record<string, unknown> = {
     phone_number_id: ev.phoneNumberId,
     wa_id: ev.contactWaId,

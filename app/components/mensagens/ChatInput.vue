@@ -25,7 +25,9 @@ function enviar() {
 
 <template>
   <!-- barra flutuante -->
-  <div class="absolute left-0 right-0 bottom-3.5 flex justify-center px-6 z-5">
+  <div
+    class="absolute left-0 right-0 bottom-[max(0.5rem,env(safe-area-inset-bottom))] md:bottom-3.5 flex justify-center px-2 md:px-6 z-5"
+  >
     <div
       class="w-full flex items-end gap-2.5 bg-input-bar-bg rounded-[26px] shadow-[0_2px_10px_rgba(11,20,26,0.16)] px-2.5 py-1.5"
     >
@@ -33,8 +35,9 @@ function enviar() {
         class="w-10 h-10 grid place-items-center rounded-full text-icon hover:bg-hover-row transition-colors shrink-0 [&_svg]:w-5.5 [&_svg]:h-5.5"
         v-html="icons.plus"
       />
+      <!-- no mobile a barra fica apertada: o sticker sai pra sobrar largura pro texto -->
       <button
-        class="w-10 h-10 grid place-items-center rounded-full text-icon hover:bg-hover-row transition-colors shrink-0 [&_svg]:w-5.5 [&_svg]:h-5.5"
+        class="hidden md:grid w-10 h-10 place-items-center rounded-full text-icon hover:bg-hover-row transition-colors shrink-0 [&_svg]:w-5.5 [&_svg]:h-5.5"
         v-html="icons.sticker"
       />
 

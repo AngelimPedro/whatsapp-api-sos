@@ -8,9 +8,9 @@ const icons = useIcons()
 </script>
 
 <template>
-  <div>
+  <div class="shrink-0">
     <!-- título + ações -->
-    <div class="flex items-center justify-between px-5 pt-4 pb-3.5 bg-panel-left">
+    <div class="flex items-center justify-between px-4 md:px-5 pt-3 md:pt-4 pb-3 md:pb-3.5 bg-panel-left shrink-0">
       <h1 class="text-[22px] font-bold text-brand-green tracking-tight">WhatsApp</h1>
       <div class="flex items-center gap-1.5">
         <button
@@ -32,11 +32,13 @@ const icons = useIcons()
         v-for="t in abas"
         :key="t.key"
         class="relative flex items-center gap-1.5 px-2.5 py-3 text-[13px] font-medium whitespace-nowrap cursor-pointer transition-colors"
-        :class="
+        :class="[
           t.key === aba
             ? 'text-brand-green'
-            : 'text-text-secondary hover:text-text-primary'
-        "
+            : 'text-text-secondary hover:text-text-primary',
+          // no mobile o hub abre em Pedidos, então ela vem primeiro na barra
+          t.key === 'pedidos' ? 'order-first md:order-none' : '',
+        ]"
         @click="$emit('aba', t.key)"
       >
         {{ t.label }}

@@ -16,7 +16,7 @@ export interface Conversa {
   color?: string
   /** iniciais exibidas quando não há imagem */
   initials?: string
-  status?: 'bot' | 'atendimento_humano' | 'qualificado' | 'desqualificado'
+  status?: 'bot' | 'atendimento_humano' | 'qualificado' | 'desqualificado' | 'pedidos'
   reminder_sent?: boolean
 }
 
@@ -26,7 +26,7 @@ export interface Peer {
 }
 
 /** Abas de filtro da lista de conversas (por status) */
-export type AbaKey = 'entrada' | 'qualificado' | 'atendimento_humano' | 'desqualificado'
+export type AbaKey = 'entrada' | 'qualificado' | 'pedidos' | 'atendimento_humano' | 'desqualificado'
 
 export interface Aba {
   key: AbaKey

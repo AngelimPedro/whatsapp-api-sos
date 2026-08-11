@@ -8,6 +8,10 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { 'data-theme': 'dark' },
+      meta: [
+        // viewport-fit=cover habilita os env(safe-area-inset-*) usados na barra de input
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+      ],
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },

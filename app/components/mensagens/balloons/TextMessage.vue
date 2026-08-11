@@ -7,7 +7,7 @@ const out = computed(() => props.msg.from === 'out')
 
 <template>
   <div
-    class="max-w-120 shadow-[0_1px_1px_var(--bubble-shadow)] overflow-hidden"
+    class="max-w-[85%] md:max-w-120 shadow-[0_1px_1px_var(--bubble-shadow)] overflow-hidden"
     :class="out ? 'bubble-out bg-bubble-out text-bubble-out-text' : 'bubble-in bg-bubble-in text-bubble-text'"
   >
     <div class="px-2.5 pt-1.5 pb-1">

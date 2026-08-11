@@ -5,6 +5,8 @@ const props = defineProps<{
   mensagens: Mensagem[]
   conversationId?: string
   hasMore?: boolean
+  /** contador que sobe quando o painel reaparece e o scroll precisa voltar pro fim */
+  ancorarNoFim?: number
 }>()
 const emit = defineEmits<{ loadOlder: [] }>()
 
@@ -29,9 +31,9 @@ function onScroll() {
   }
 }
 
-// trocou de conversa -> rola pro fim
+// trocou de conversa, ou o painel reapareceu no mobile -> rola pro fim
 watch(
-  () => props.conversationId,
+  [() => props.conversationId, () => props.ancorarNoFim],
   async () => {
     await nextTick()
     scrollToBottom()
@@ -65,7 +67,7 @@ onMounted(async () => {
 <template>
   <div
     ref="scrollEl"
-    class="flex-1 min-h-0 overflow-y-auto pt-3.5 px-16 pb-24 relative scroll flex flex-col"
+    class="flex-1 min-h-0 overflow-y-auto pt-3.5 px-3 md:px-16 pb-20 md:pb-24 relative scroll flex flex-col"
     @scroll.passive="onScroll"
   >
     <!-- glow vermelho da marca (SOS HUB) -->

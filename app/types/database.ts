@@ -21,8 +21,14 @@ export type ConversationRow = {
   unread_count: number
   created_at: string
   updated_at: string
-  status: 'bot' | 'atendimento_humano' | 'qualificado' | 'desqualificado'
+  status: 'bot' | 'atendimento_humano' | 'qualificado' | 'desqualificado' | 'pedidos'
   reminder_sent: boolean
+}
+
+/** Resposta paginada de /api/conversations (total = tamanho da fila da aba). */
+export type ConversationsPage = {
+  items: ConversationRow[]
+  total: number
 }
 
 export type MessageRow = {

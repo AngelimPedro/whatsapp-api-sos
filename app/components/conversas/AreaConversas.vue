@@ -7,7 +7,7 @@ defineEmits<{ select: [id: string]; aba: [value: AbaKey]; loadMore: [] }>()
 
 <template>
   <div
-    class="flex flex-col bg-panel-left border-r border-panel-divider min-w-0 h-screen overflow-hidden"
+    class="flex flex-col bg-panel-left md:border-r border-panel-divider min-w-0 w-full h-dvh overflow-hidden"
   >
     <HeaderConversa :abas="abas" :aba="aba" @aba="$emit('aba', $event)" />
     <ListaConversa
