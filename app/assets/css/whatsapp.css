@@ -145,8 +145,8 @@ html[data-theme='light'] {
 html,
 body {
   height: 100%;
-  /* no mobile, impede o "puxão" elástico de arrastar a página inteira — é o que
-     fazia a barra do contato sair da tela ao rolar a conversa */
+  overflow: hidden;
+  /* no mobile, impede o "puxão" elástico de arrastar a página inteira */
   overscroll-behavior: none;
 }
 

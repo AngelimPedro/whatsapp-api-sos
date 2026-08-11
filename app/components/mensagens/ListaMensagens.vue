@@ -97,7 +97,7 @@ onMounted(async () => {
 <template>
   <div
     ref="scrollEl"
-    class="flex-1 min-h-0 overflow-y-auto pt-3.5 px-3 md:px-16 pb-24 relative scroll flex flex-col"
+    class="relative flex-1 min-h-0 overflow-y-auto pt-3.5 px-3 md:px-16 pb-3 scroll flex flex-col"
     @scroll.passive="onScroll"
   >
     <!-- glow vermelho da marca (SOS HUB) -->
