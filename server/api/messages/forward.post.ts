@@ -131,8 +131,18 @@ export default defineEventHandler(async (event) => {
         .select('*')
         .single()
 
-      if (insErr) {
-        console.error('[forward] persistir cópia:', insErr.message)
+      // A mensagem já saiu no WhatsApp, mas se não conseguimos registrar a
+      // cópia o hub não tem o que mostrar. Reportar sucesso aqui fazia a
+      // prévia da conversa atualizar sem a mensagem existir de fato.
+      if (insErr || !inserida) {
+        console.error('[forward] persistir cópia:', insErr?.message)
+        resultados.push({
+          conversationId: conv.id,
+          ok: false,
+          waMessageId,
+          erro: `Enviada no WhatsApp, mas não foi possível registrar no hub: ${insErr?.message ?? 'insert vazio'}`,
+        })
+        continue
       }
 
       // 5) prévia/posição da conversa de destino
@@ -145,7 +155,7 @@ export default defineEventHandler(async (event) => {
         .single()
 
       // 6) realtime p/ quem estiver com a conversa de destino aberta
-      if (convAtualizada && inserida) {
+      if (convAtualizada) {
         await publishNewMessage(convAtualizada, inserida)
       }
 

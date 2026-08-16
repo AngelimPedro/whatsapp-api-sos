@@ -29,8 +29,9 @@ function mostraAviso(texto: string) {
   avisoTimer = setTimeout(() => (aviso.value = ''), 3000)
 }
 
-function confirmado(qtd: number) {
-  mostraAviso(qtd === 1 ? 'Mensagem encaminhada' : `Mensagem encaminhada para ${qtd} conversas`)
+function confirmado(ok: number, falhas = 0) {
+  const base = ok === 1 ? 'Mensagem encaminhada' : `Mensagem encaminhada para ${ok} conversas`
+  mostraAviso(falhas ? `${base} — ${falhas} falhou(ram), veja o log` : base)
 }
 
 /* ---------- arrastar e soltar ----------

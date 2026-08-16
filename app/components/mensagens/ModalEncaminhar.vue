@@ -12,7 +12,7 @@ const props = defineProps<{
   /** conversa de origem, escondida da lista de destinos */
   origemId?: string
 }>()
-const emit = defineEmits<{ fechar: []; enviado: [qtd: number] }>()
+const emit = defineEmits<{ fechar: []; enviado: [ok: number, falhas: number] }>()
 
 const icons = useIcons()
 const chat = useChatStore()
@@ -78,8 +78,8 @@ async function confirmar() {
     // as cópias foram criadas no servidor: sem isto elas só apareceriam
     // na conversa de destino depois de recarregar a página
     await chat.aposEncaminhar(resultados.filter((r) => r.ok).map((r) => r.conversationId))
-    // sucesso parcial ainda fecha: o que foi, foi — o resto aparece no aviso
-    emit('enviado', resultados.length - falhas.length)
+    // sucesso parcial fecha, mas o aviso diz quantos ficaram de fora
+    emit('enviado', resultados.length - falhas.length, falhas.length)
     emit('fechar')
   } catch (e) {
     console.error('[encaminhar] envio:', e)
