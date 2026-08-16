@@ -269,6 +269,54 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** Envia um arquivo anexado pela conversa ativa: balão otimista + upload. */
+  async function sendArquivo(file: File) {
+    const id = activeId.value
+    if (!id || !file) return
+
+    const ehImagem = file.type === 'image/jpeg' || file.type === 'image/png'
+    const kind: 'image' | 'document' = ehImagem ? 'image' : 'document'
+    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    const clientId = `tmp-${++tmpSeq}`
+    // preview local instantâneo p/ imagem (revogado após o envio)
+    const localUrl = ehImagem ? URL.createObjectURL(file) : ''
+
+    const otimista: MensagemBalao = ehImagem
+      ? { type: 'msg', kind: 'image', from: 'out', time: hora, status: 'sent', clientId, url: localUrl }
+      : { type: 'msg', kind: 'document', from: 'out', time: hora, status: 'sent', clientId, url: '', filename: file.name }
+
+    pushMensagem(id, otimista, ehImagem ? '[Imagem]' : `[Arquivo] ${file.name}`)
+
+    try {
+      const form = new FormData()
+      form.append('conversationId', id)
+      form.append('file', file)
+
+      const res = await $fetch<{ waMessageId?: string | null; mediaUrl?: string | null }>(
+        '/api/messages/send-media',
+        { method: 'POST', body: form },
+      )
+
+      // casa o wamid + URL pública no balão otimista
+      const cache = msgCache[id]
+      if (cache) {
+        cache.items = cache.items.map((m) => {
+          if (m.type !== 'msg' || m.clientId !== clientId) return m
+          const patched: MensagemBalao = { ...m, waMessageId: res?.waMessageId ?? undefined }
+          if (res?.mediaUrl && (patched.kind === 'image' || patched.kind === 'document')) {
+            patched.url = res.mediaUrl
+            // agora que o balão aponta p/ a URL pública, libera o blob local
+            if (localUrl) URL.revokeObjectURL(localUrl)
+          }
+          return patched
+        })
+      }
+    } catch (e) {
+      console.error('[chat] envio de arquivo falhou:', e)
+      // TODO: marcar a mensagem otimista como 'failed'
+    }
+  }
+
   /* ---------- realtime (Pusher) ---------- */
   function onRealtimeMessage(convRow: ConversationRow, msgRow: MessageRow) {
     const msg = mapMensagem(msgRow) as MensagemBalao
@@ -385,6 +433,7 @@ export const useChatStore = defineStore('chat', () => {
     loadOlderMensagens,
     pushMensagem,
     sendMensagem,
+    sendArquivo,
     onRealtimeMessage,
     onRealtimeStatus,
     syncActive,

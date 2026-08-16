@@ -79,6 +79,99 @@ export async function sendImageMessage(
   return res?.messages?.[0]?.id ?? null
 }
 
+/** Tipos de mídia que o encaminhamento sabe reenviar (imagem tem caminho próprio). */
+export type MediaKind = 'audio' | 'video' | 'document' | 'sticker'
+
+/**
+ * Reenvia uma mídia a partir da URL já resolvida (media_url da mensagem
+ * original). Baixa, sobe de novo como mídia nova e envia pelo media id —
+ * o id da mídia recebida não é reutilizável para envio.
+ */
+export async function sendMediaMessage(
+  phoneNumberId: string,
+  to: string,
+  kind: MediaKind,
+  mediaUrl: string,
+  caption?: string,
+  filename?: string,
+): Promise<string | null> {
+  const { base, token } = getDatafyConfig()
+
+  if (!mediaUrl?.trim()) {
+    throw new Error('URL da mídia vazia')
+  }
+
+  const response = await fetch(mediaUrl)
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar mídia (${response.status}): ${mediaUrl}`)
+  }
+  const mimeType =
+    (response.headers.get('content-type') || '').split(';')[0]!.trim() || 'application/octet-stream'
+  const buffer = Buffer.from(await response.arrayBuffer())
+
+  const mediaId = await uploadMedia(phoneNumberId, buffer, mimeType, filename || 'arquivo')
+
+  // sticker e audio não aceitam caption na Cloud API
+  const aceitaCaption = kind === 'video' || kind === 'document'
+  const payload: Record<string, unknown> = { id: mediaId }
+  if (aceitaCaption && caption) payload.caption = caption
+  if (kind === 'document' && filename) payload.filename = filename
+
+  const res = await $fetch<SendResponse>(`${base}/v1/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: kind,
+      [kind]: payload,
+    },
+  })
+
+  return res?.messages?.[0]?.id ?? null
+}
+
+/**
+ * Envia um arquivo que o usuário anexou no chat (buffer em memória): faz o
+ * upload da mídia e dispara a mensagem pelo media id. Retorna o wamid e o
+ * media id (usado depois para resolver a URL pública e exibir o balão).
+ *
+ * kind: 'image' só para JPEG/PNG (exigência do WhatsApp); qualquer outro
+ * arquivo vai como 'document', preservando o nome original.
+ */
+export async function sendFileMessage(
+  phoneNumberId: string,
+  to: string,
+  kind: 'image' | 'document',
+  buffer: Buffer,
+  mimeType: string,
+  filename: string,
+  caption?: string,
+): Promise<{ waMessageId: string | null; mediaId: string }> {
+  const { base, token } = getDatafyConfig()
+
+  const mediaId = await uploadMedia(phoneNumberId, buffer, mimeType, filename)
+
+  const payload: Record<string, unknown> = { id: mediaId }
+  if (caption) payload.caption = caption
+  if (kind === 'document') payload.filename = filename
+
+  const res = await $fetch<SendResponse>(`${base}/v1/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: kind,
+      [kind]: payload,
+    },
+  })
+
+  return { waMessageId: res?.messages?.[0]?.id ?? null, mediaId }
+}
+
 function getDatafyConfig(): { base: string; token: string } {
   const config = useRuntimeConfig()
   const base = config.datafyApiUrl as string
