@@ -164,8 +164,15 @@ export const useChatStore = defineStore('chat', () => {
   /* ---------- mensagens: seleção usa cache ---------- */
   function selectConversa(id: string) {
     activeId.value = id
-    // cache hit -> instantâneo, sem refetch
-    if (!msgCache[id]) loadFirstMensagens(id)
+    if (!msgCache[id]) {
+      loadFirstMensagens(id)
+      return
+    }
+    // Cache quente aparece na hora, mas pode estar velho: se um evento do
+    // Pusher se perdeu (aba em background, rede oscilando, encaminhamento
+    // vindo de outra tela), o que falta só apareceria recarregando a página.
+    // O sync incremental (?since=) cobre isso sem piscar a lista.
+    syncActive()
   }
 
   async function loadFirstMensagens(id: string) {
@@ -270,7 +277,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /** Envia um arquivo anexado pela conversa ativa: balão otimista + upload. */
-  async function sendArquivo(file: File) {
+  async function sendArquivo(file: File, legenda?: string) {
     const id = activeId.value
     if (!id || !file) return
 
@@ -282,14 +289,15 @@ export const useChatStore = defineStore('chat', () => {
     const localUrl = ehImagem ? URL.createObjectURL(file) : ''
 
     const otimista: MensagemBalao = ehImagem
-      ? { type: 'msg', kind: 'image', from: 'out', time: hora, status: 'sent', clientId, url: localUrl }
-      : { type: 'msg', kind: 'document', from: 'out', time: hora, status: 'sent', clientId, url: '', filename: file.name }
+      ? { type: 'msg', kind: 'image', from: 'out', time: hora, status: 'sent', clientId, url: localUrl, caption: legenda }
+      : { type: 'msg', kind: 'document', from: 'out', time: hora, status: 'sent', clientId, url: '', filename: file.name, caption: legenda }
 
-    pushMensagem(id, otimista, ehImagem ? '[Imagem]' : `[Arquivo] ${file.name}`)
+    pushMensagem(id, otimista, ehImagem ? legenda || '[Imagem]' : `[Arquivo] ${file.name}`)
 
     try {
       const form = new FormData()
       form.append('conversationId', id)
+      if (legenda) form.append('caption', legenda)
       form.append('file', file)
 
       const res = await $fetch<{ waMessageId?: string | null; mediaUrl?: string | null }>(
@@ -311,6 +319,11 @@ export const useChatStore = defineStore('chat', () => {
           return patched
         })
       }
+
+      // O envio de arquivo não publica no Pusher (depende do echo do webhook,
+      // que nem sempre vem para mídia de saída). Sem isto, o balão só ficava
+      // correto depois de recarregar a página.
+      await syncActive()
     } catch (e) {
       console.error('[chat] envio de arquivo falhou:', e)
       // envio rejeitado: remove o balão otimista p/ não mentir "enviado"
@@ -364,6 +377,19 @@ export const useChatStore = defineStore('chat', () => {
         break
       }
     }
+  }
+
+  /**
+   * Chamado após encaminhar: as cópias nasceram no servidor, então o cache
+   * local dos destinos está desatualizado. A conversa aberta ressincroniza na
+   * hora; as demais têm o cache descartado para recarregarem ao abrir.
+   */
+  async function aposEncaminhar(conversationIds: string[]) {
+    for (const id of conversationIds) {
+      if (id === activeId.value) continue
+      delete msgCache[id]
+    }
+    await Promise.all([syncActive(), carregarFila(abaAtiva.value, true)])
   }
 
   /* ---------- sync incremental (reconexão / retorno de foco) ---------- */
@@ -443,5 +469,6 @@ export const useChatStore = defineStore('chat', () => {
     onRealtimeStatus,
     syncActive,
     resync,
+    aposEncaminhar,
   }
 })

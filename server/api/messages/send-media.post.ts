@@ -16,9 +16,11 @@ export default defineEventHandler(async (event) => {
   }
 
   let conversationId = ''
+  let caption = ''
   let filePart: { data: Buffer; filename?: string; type?: string } | null = null
   for (const p of parts) {
     if (p.name === 'conversationId') conversationId = p.data.toString('utf-8').trim()
+    else if (p.name === 'caption') caption = p.data.toString('utf-8').trim()
     else if (p.name === 'file') filePart = p as { data: Buffer; filename?: string; type?: string }
   }
 
@@ -52,6 +54,7 @@ export default defineEventHandler(async (event) => {
     filePart.data,
     mimeType,
     filename,
+    caption || undefined,
   )
 
   // WhatsApp não confirmou a entrega (200 sem wamid) = rejeitado (ex.: fora da
@@ -83,6 +86,7 @@ export default defineEventHandler(async (event) => {
   }
   // documento guarda o nome no body (mapMensagem lê o filename de lá)
   if (kind === 'document') row.body = filename
+  if (caption) row.caption = caption
 
   const { data: inserted, error: insErr } = await supabase
     .from('messages')
@@ -95,11 +99,19 @@ export default defineEventHandler(async (event) => {
   }
 
   // 5) atualiza prévia/posição da conversa
-  const preview = kind === 'image' ? '[Imagem]' : `[Arquivo] ${filename}`
-  await supabase
+  const preview = kind === 'image' ? caption || '[Imagem]' : `[Arquivo] ${filename}`
+  const { data: convAtualizada } = await supabase
     .from('conversations')
     .update({ last_message_preview: preview, last_message_at: nowIso })
     .eq('id', conv.id)
+    .select('*')
+    .single()
+
+  // 6) realtime: o echo do webhook não é garantido para mídia de saída, então
+  // sem publicar aqui as outras abas/atendentes só veriam o arquivo ao recarregar
+  if (convAtualizada && inserted) {
+    await publishNewMessage(convAtualizada, inserted)
+  }
 
   return { ok: true, waMessageId, mediaId, mediaUrl, kind, message: inserted ?? null }
 })

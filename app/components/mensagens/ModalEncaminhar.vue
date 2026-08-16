@@ -15,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{ fechar: []; enviado: [qtd: number] }>()
 
 const icons = useIcons()
+const chat = useChatStore()
 
 const LIMITE = 50
 
@@ -73,6 +74,10 @@ async function confirmar() {
       erro.value = falhas[0]?.erro || 'Falha ao encaminhar.'
       return
     }
+
+    // as cópias foram criadas no servidor: sem isto elas só apareceriam
+    // na conversa de destino depois de recarregar a página
+    await chat.aposEncaminhar(resultados.filter((r) => r.ok).map((r) => r.conversationId))
     // sucesso parcial ainda fecha: o que foi, foi — o resto aparece no aviso
     emit('enviado', resultados.length - falhas.length)
     emit('fechar')
