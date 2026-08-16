@@ -36,7 +36,13 @@ export async function sendTextMessage(
     },
   })
 
-  return res?.messages?.[0]?.id ?? null
+  const wamid = res?.messages?.[0]?.id ?? null
+  if (!wamid) {
+    // 200 sem wamid = WhatsApp não aceitou (ex.: fora da janela de 24h,
+    // número inválido). Loga a resposta crua para revelar o motivo real.
+    console.warn(`[datafySend] texto p/ ${to} sem wamid na resposta:`, JSON.stringify(res))
+  }
+  return wamid
 }
 
 /**
@@ -76,7 +82,9 @@ export async function sendImageMessage(
     },
   })
 
-  return res?.messages?.[0]?.id ?? null
+  const wamid = res?.messages?.[0]?.id ?? null
+  if (!wamid) console.warn(`[datafySend] imagem p/ ${to} sem wamid na resposta:`, JSON.stringify(res))
+  return wamid
 }
 
 /** Tipos de mídia que o encaminhamento sabe reenviar (imagem tem caminho próprio). */
@@ -129,7 +137,9 @@ export async function sendMediaMessage(
     },
   })
 
-  return res?.messages?.[0]?.id ?? null
+  const wamid = res?.messages?.[0]?.id ?? null
+  if (!wamid) console.warn(`[datafySend] mídia (${kind}) p/ ${to} sem wamid na resposta:`, JSON.stringify(res))
+  return wamid
 }
 
 /**
@@ -169,7 +179,9 @@ export async function sendFileMessage(
     },
   })
 
-  return { waMessageId: res?.messages?.[0]?.id ?? null, mediaId }
+  const wamid = res?.messages?.[0]?.id ?? null
+  if (!wamid) console.warn(`[datafySend] arquivo (${kind}) p/ ${to} sem wamid na resposta:`, JSON.stringify(res))
+  return { waMessageId: wamid, mediaId }
 }
 
 function getDatafyConfig(): { base: string; token: string } {

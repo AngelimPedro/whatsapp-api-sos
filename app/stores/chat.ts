@@ -313,7 +313,12 @@ export const useChatStore = defineStore('chat', () => {
       }
     } catch (e) {
       console.error('[chat] envio de arquivo falhou:', e)
-      // TODO: marcar a mensagem otimista como 'failed'
+      // envio rejeitado: remove o balão otimista p/ não mentir "enviado"
+      const cache = msgCache[id]
+      if (cache) {
+        cache.items = cache.items.filter((m) => !(m.type === 'msg' && m.clientId === clientId))
+      }
+      if (localUrl) URL.revokeObjectURL(localUrl)
     }
   }
 

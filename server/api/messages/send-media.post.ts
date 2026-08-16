@@ -54,6 +54,16 @@ export default defineEventHandler(async (event) => {
     filename,
   )
 
+  // WhatsApp não confirmou a entrega (200 sem wamid) = rejeitado (ex.: fora da
+  // janela de 24h). Não persiste como enviado — devolve erro pro cliente.
+  if (!waMessageId) {
+    throw createError({
+      statusCode: 502,
+      statusMessage:
+        'O WhatsApp não confirmou a entrega do arquivo (provável rejeição: fora da janela de 24h ou número inválido).',
+    })
+  }
+
   // 3) resolve a URL pública da mídia (p/ exibir o balão enviado)
   const mediaUrl = mediaId ? await resolveMediaUrl(mediaId) : null
 

@@ -97,13 +97,26 @@ export default defineEventHandler(async (event) => {
         )
       }
 
-      // 4) persiste a cópia no destino
+      // WhatsApp não confirmou o envio (HTTP 200 sem wamid) = rejeitado, o caso
+      // clássico de encaminhar para fora da janela de 24h. NÃO persiste nem
+      // mostra no hub como enviado — antes fingia sucesso com um id 'fwd-...'.
+      if (!waMessageId) {
+        resultados.push({
+          conversationId: conv.id,
+          ok: false,
+          erro:
+            'O WhatsApp não confirmou a entrega (provável rejeição: fora da janela de 24h ou número inválido).',
+        })
+        continue
+      }
+
+      // 4) persiste a cópia no destino (só quando realmente enviou)
       const agora = new Date().toISOString()
       const { data: inserida, error: insErr } = await supabase
         .from('messages')
         .insert({
           conversation_id: conv.id,
-          wa_message_id: waMessageId || `fwd-${conv.id}-${Date.now()}`,
+          wa_message_id: waMessageId,
           direction: 'out',
           kind: origem.kind,
           from_wa_id: conv.display_phone_number,
@@ -111,7 +124,7 @@ export default defineEventHandler(async (event) => {
           body: origem.body,
           caption: origem.caption,
           media_url: origem.media_url,
-          status: waMessageId ? 'sent' : null,
+          status: 'sent',
           forwarded: true,
           wa_timestamp: agora,
         })
