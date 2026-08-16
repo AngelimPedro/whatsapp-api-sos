@@ -53,6 +53,7 @@ export function mapMensagem(row: MessageRow): Mensagem {
     from: row.direction,
     time: fmtHora(row.wa_timestamp),
     status: row.status === 'failed' ? undefined : row.status ?? undefined,
+    forwarded: row.forwarded ?? false,
   }
   const url = row.media_url ?? ''
   const caption = row.caption ?? undefined

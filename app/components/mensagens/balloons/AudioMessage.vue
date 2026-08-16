@@ -32,6 +32,7 @@ function toggle() {
     class="px-2.5 py-2 w-85 max-w-full shadow-[0_1px_1px_var(--bubble-shadow)]"
     :class="out ? 'bubble-out bg-bubble-out text-bubble-out-text' : 'bubble-in bg-bubble-in text-bubble-text'"
   >
+    <EncaminhadaTag v-if="msg.forwarded" />
     <div class="flex items-center gap-2.5">
       <!-- botão play/pause -->
       <button
