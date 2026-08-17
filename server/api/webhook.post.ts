@@ -162,9 +162,15 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
 
         try {
           if (msg.type === 'image' && msg.imageUrl) {
-            sentWamid = await sendImageMessage(ev.phoneNumberId, ev.contactWaId, msg.imageUrl, msg.text)
+            sentWamid = await sendImageMessage(ev.phoneNumberId, ev.contactWaId, msg.imageUrl, msg.text, {
+              conversationId,
+              source: 'bot',
+            })
           } else if (msg.type === 'text' && msg.text) {
-            sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text)
+            sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text, {
+              conversationId,
+              source: 'bot',
+            })
           }
         } catch (sendErr) {
           console.error(`[webhook] erro ao enviar mensagem index ${index}:`, sendErr)
@@ -172,7 +178,10 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
           // Se a imagem falhar, tenta pelo menos entregar o texto do produto
           if (msg.type === 'image' && msg.text) {
             try {
-              sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text)
+              sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text, {
+                conversationId,
+                source: 'bot',
+              })
               persistedKind = 'text'
               persistedBody = msg.text
               persistedMediaUrl = null
@@ -276,7 +285,10 @@ async function handleResumoDoPedido(
 
   let wamid: string | null = null
   try {
-    wamid = await sendTextMessage(ev.phoneNumberId!, ev.contactWaId!, RESUMO_PEDIDO_REPLY)
+    wamid = await sendTextMessage(ev.phoneNumberId!, ev.contactWaId!, RESUMO_PEDIDO_REPLY, {
+      conversationId,
+      source: 'bot',
+    })
   } catch (sendErr) {
     console.error('[webhook] erro ao enviar resposta do gatilho de pedido:', sendErr)
   }

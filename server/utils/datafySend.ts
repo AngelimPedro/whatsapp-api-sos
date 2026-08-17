@@ -1,4 +1,5 @@
 import sharp from 'sharp'
+import { extractFetchError, recordAudit, type SendAuditMeta } from './audit'
 
 interface SendResponse {
   messages?: { id: string }[]
@@ -8,8 +9,6 @@ interface SendResponse {
 interface MediaUploadResponse {
   id?: string
 }
-
-const WHATSAPP_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/jpg'])
 
 /**
  * Envia mensagem de texto via Datafy (padrão Cloud API):
@@ -21,22 +20,67 @@ export async function sendTextMessage(
   phoneNumberId: string,
   to: string,
   text: string,
+  meta?: SendAuditMeta,
 ): Promise<string | null> {
   const { base, token } = getDatafyConfig()
+  const url = `${base}/v1/${phoneNumberId}/messages`
+  const started = Date.now()
+  const request = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'text',
+    text: { body: text },
+  }
 
-  const res = await $fetch<SendResponse>(`${base}/v1/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'text',
-      text: { body: text },
-    },
-  })
+  try {
+    const res = await $fetch<SendResponse>(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: request,
+    })
 
-  return res?.messages?.[0]?.id ?? null
+    const waMessageId = res?.messages?.[0]?.id ?? null
+    recordAudit({
+      success: Boolean(waMessageId),
+      provider: 'datafy',
+      action: 'send_text',
+      source: meta?.source,
+      method: 'POST',
+      url,
+      http_status: 200,
+      error_message: waMessageId ? null : 'Resposta sem wamid',
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      wa_message_id: waMessageId,
+      duration_ms: Date.now() - started,
+      request: { to, type: 'text', text },
+      response: res,
+    })
+
+    return waMessageId
+  } catch (err: any) {
+    const parsed = extractFetchError(err)
+    recordAudit({
+      success: false,
+      provider: 'datafy',
+      action: 'send_text',
+      source: meta?.source,
+      method: 'POST',
+      url,
+      http_status: parsed.http_status,
+      error_code: parsed.error_code,
+      error_message: parsed.error_message,
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      duration_ms: Date.now() - started,
+      request: { to, type: 'text', text },
+      response: parsed.response,
+    })
+    throw err
+  }
 }
 
 /**
@@ -50,33 +94,80 @@ export async function sendImageMessage(
   phoneNumberId: string,
   to: string,
   imageUrl: string,
-  caption?: string
+  caption?: string,
+  meta?: SendAuditMeta,
 ): Promise<string | null> {
   const { base, token } = getDatafyConfig()
+  const url = `${base}/v1/${phoneNumberId}/messages`
+  const started = Date.now()
+  const captionText =
+    typeof caption === 'string' && caption.trim() ? caption.trim().slice(0, 1024) : undefined
 
   if (!imageUrl?.trim()) {
     throw new Error('URL da imagem vazia')
   }
 
   const prepared = await prepareImageForWhatsApp(imageUrl)
-  const mediaId = await uploadMedia(phoneNumberId, prepared.buffer, prepared.mimeType, prepared.filename)
+  const mediaId = await uploadMedia(phoneNumberId, prepared.buffer, prepared.mimeType, prepared.filename, meta)
 
-  const res = await $fetch<SendResponse>(`${base}/v1/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'image',
-      image: {
-        id: mediaId,
-        ...(caption ? { caption } : {})
+  try {
+    const res = await $fetch<SendResponse>(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'image',
+        image: {
+          id: mediaId,
+          ...(captionText ? { caption: captionText } : {})
+        },
       },
-    },
-  })
+    })
 
-  return res?.messages?.[0]?.id ?? null
+    const waMessageId = res?.messages?.[0]?.id ?? null
+    recordAudit({
+      success: Boolean(waMessageId),
+      provider: 'datafy',
+      action: 'send_image',
+      source: meta?.source,
+      method: 'POST',
+      url,
+      http_status: 200,
+      error_message: waMessageId ? null : 'Resposta sem wamid',
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      wa_message_id: waMessageId,
+      duration_ms: Date.now() - started,
+      request: { to, type: 'image', imageUrl, caption: captionText, mediaId },
+      response: res,
+    })
+
+    return waMessageId
+  } catch (err: any) {
+    const parsed = extractFetchError(err)
+    recordAudit({
+      success: false,
+      provider: 'datafy',
+      action: 'send_image',
+      source: meta?.source,
+      method: 'POST',
+      url,
+      http_status: parsed.http_status,
+      error_code: parsed.error_code,
+      error_message: parsed.error_message,
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      duration_ms: Date.now() - started,
+      request: { to, type: 'image', imageUrl, caption: captionText, mediaId },
+      response: parsed.response,
+    })
+    console.error('[datafySend] falha ao enviar imagem:', parsed)
+    throw err
+  }
 }
 
 function getDatafyConfig(): { base: string; token: string } {
@@ -111,20 +202,8 @@ async function prepareImageForWhatsApp(imageUrl: string): Promise<{
   const arrayBuffer = await response.arrayBuffer()
   const sourceBuffer = Buffer.from(arrayBuffer)
 
-  const looksWebp =
-    sourceType === 'image/webp' ||
-    imageUrl.toLowerCase().includes('.webp')
-
-  if (!looksWebp && WHATSAPP_IMAGE_TYPES.has(sourceType)) {
-    const mimeType = sourceType === 'image/png' ? 'image/png' : 'image/jpeg'
-    return {
-      buffer: sourceBuffer,
-      mimeType,
-      filename: mimeType === 'image/png' ? 'product.png' : 'product.jpg',
-    }
-  }
-
-  // Converte webp (e qualquer outro formato) para JPEG
+  // WhatsApp só aceita JPEG/PNG 8-bit. Convertimos tudo para JPEG
+  // (webp, png com perfil estranho, etc.) para evitar erro 131053.
   const jpegBuffer = await sharp(sourceBuffer)
     .rotate()
     .jpeg({ quality: 85, mozjpeg: true })
@@ -146,9 +225,12 @@ async function uploadMedia(
   phoneNumberId: string,
   buffer: Buffer,
   mimeType: string,
-  filename: string
+  filename: string,
+  meta?: SendAuditMeta,
 ): Promise<string> {
   const { base, token } = getDatafyConfig()
+  const url = `${base}/v1/${phoneNumberId}/media`
+  const started = Date.now()
 
   const form = new FormData()
   form.append('messaging_product', 'whatsapp')
@@ -156,7 +238,7 @@ async function uploadMedia(
   form.append('file', new Blob([new Uint8Array(buffer)], { type: mimeType }), filename)
 
   // fetch nativo: $fetch/ofetch às vezes quebra o boundary do multipart
-  const uploadRes = await fetch(`${base}/v1/${phoneNumberId}/media`, {
+  const uploadRes = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: form,
@@ -164,6 +246,21 @@ async function uploadMedia(
 
   const raw = await uploadRes.text()
   if (!uploadRes.ok) {
+    recordAudit({
+      success: false,
+      provider: 'datafy',
+      action: 'upload_media',
+      source: meta?.source,
+      method: 'POST',
+      url,
+      http_status: uploadRes.status,
+      error_message: raw.slice(0, 2000),
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      duration_ms: Date.now() - started,
+      request: { mimeType, filename, bytes: buffer.length },
+      response: raw,
+    })
     throw new Error(`Upload de mídia falhou (${uploadRes.status}): ${raw}`)
   }
 
@@ -171,12 +268,58 @@ async function uploadMedia(
   try {
     res = JSON.parse(raw)
   } catch {
+    recordAudit({
+      success: false,
+      provider: 'datafy',
+      action: 'upload_media',
+      source: meta?.source,
+      method: 'POST',
+      url,
+      http_status: uploadRes.status,
+      error_message: 'JSON inválido no upload de mídia',
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      duration_ms: Date.now() - started,
+      request: { mimeType, filename, bytes: buffer.length },
+      response: raw,
+    })
     throw new Error(`Upload de mídia retornou JSON inválido: ${raw}`)
   }
 
-  if (!res?.id) {
+  const mediaId = res?.id || (res as any)?.media_id || (res as any)?.data?.id
+  if (!mediaId) {
+    recordAudit({
+      success: false,
+      provider: 'datafy',
+      action: 'upload_media',
+      source: meta?.source,
+      method: 'POST',
+      url,
+      http_status: uploadRes.status,
+      error_message: 'Upload de mídia sem id na resposta',
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      duration_ms: Date.now() - started,
+      request: { mimeType, filename, bytes: buffer.length },
+      response: res,
+    })
     throw new Error(`Upload de mídia sem id na resposta: ${raw}`)
   }
 
-  return res.id
+  recordAudit({
+    success: true,
+    provider: 'datafy',
+    action: 'upload_media',
+    source: meta?.source,
+    method: 'POST',
+    url,
+    http_status: uploadRes.status,
+    conversation_id: meta?.conversationId,
+    phone_number_id: phoneNumberId,
+    duration_ms: Date.now() - started,
+    request: { mimeType, filename, bytes: buffer.length },
+    response: { id: mediaId },
+  })
+
+  return String(mediaId)
 }
