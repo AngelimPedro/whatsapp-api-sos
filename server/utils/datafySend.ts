@@ -191,6 +191,104 @@ export async function sendImageMessage(
 }
 
 /**
+ * Envia um arquivo já em memória (anexo do painel).
+ * JPEG/PNG vão como imagem; qualquer outro tipo como documento.
+ * Retorna wamid + mediaId para o hub persistir e resolver a URL pública.
+ */
+export async function sendFileMessage(
+  phoneNumberId: string,
+  to: string,
+  kind: 'image' | 'document',
+  buffer: Buffer,
+  mimeType: string,
+  filename: string,
+  caption?: string,
+  meta?: SendAuditMeta,
+): Promise<{ waMessageId: string | null; mediaId: string }> {
+  const { base, token } = getDatafyConfig()
+  const url = `${base}/v1/${phoneNumberId}/messages`
+  const started = Date.now()
+  const captionText =
+    typeof caption === 'string' && caption.trim() ? caption.trim().slice(0, 1024) : undefined
+
+  let uploadBuffer = buffer
+  let uploadMime = mimeType || 'application/octet-stream'
+  let uploadName = filename || 'arquivo'
+
+  if (kind === 'image') {
+    const jpegBuffer = await sharp(buffer)
+      .rotate()
+      .jpeg({ quality: 85, mozjpeg: true })
+      .toBuffer()
+    uploadBuffer = jpegBuffer
+    uploadMime = 'image/jpeg'
+    uploadName = uploadName.replace(/\.[^.]+$/, '') + '.jpg'
+  }
+
+  const mediaId = await uploadMedia(phoneNumberId, uploadBuffer, uploadMime, uploadName, meta)
+
+  const payload: Record<string, unknown> = { id: mediaId }
+  if (captionText) payload.caption = captionText
+  if (kind === 'document') payload.filename = uploadName
+
+  try {
+    const res = await $fetch<SendResponse>(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: kind,
+        [kind]: payload,
+      },
+    })
+
+    const waMessageId = res?.messages?.[0]?.id ?? null
+    recordAudit({
+      success: Boolean(waMessageId),
+      provider: 'datafy',
+      action: `send_file_${kind}`,
+      source: meta?.source ?? 'painel',
+      method: 'POST',
+      url,
+      http_status: 200,
+      error_message: waMessageId ? null : 'Resposta sem wamid',
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      wa_message_id: waMessageId,
+      duration_ms: Date.now() - started,
+      request: { to, type: kind, filename: uploadName, mimeType: uploadMime, caption: captionText },
+      response: res,
+    })
+
+    return { waMessageId, mediaId }
+  } catch (err: any) {
+    const parsed = extractFetchError(err)
+    recordAudit({
+      success: false,
+      provider: 'datafy',
+      action: `send_file_${kind}`,
+      source: meta?.source ?? 'painel',
+      method: 'POST',
+      url,
+      http_status: parsed.http_status,
+      error_code: parsed.error_code,
+      error_message: parsed.error_message,
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      duration_ms: Date.now() - started,
+      request: { to, type: kind, filename: uploadName, mimeType: uploadMime, caption: captionText },
+      response: parsed.response,
+    })
+    console.error('[datafySend] falha ao enviar arquivo:', parsed)
+    throw err
+  }
+}
+
+/**
  * Reenvia áudio, vídeo, documento ou sticker a partir de uma URL pública.
  * Usado no encaminhamento: baixa o arquivo, faz upload na Datafy e envia
  * pelo media id (o id original da mensagem recebida não serve para envio).
