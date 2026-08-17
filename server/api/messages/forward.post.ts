@@ -11,6 +11,28 @@ import { sendTextMessage, sendImageMessage, sendMediaMessage, type MediaKind } f
  * Cada destino é independente — se um falhar, os outros seguem. A resposta
  * traz o resultado por conversa para a UI avisar o que não foi.
  */
+/**
+ * A cópia encaminhada precisa da coluna `messages.forwarded`. Sem ela o envio
+ * ao WhatsApp acontece e só o registro falha — o cliente recebe e o hub não
+ * mostra. Checar antes evita esse estado.
+ *
+ * Só o resultado positivo fica em cache: enquanto faltar, cada tentativa
+ * refaz a checagem, então rodar a migration passa a valer sem reiniciar.
+ */
+let colunaForwardedOk = false
+
+async function podeRegistrarEncaminhamento(
+  supabase: ReturnType<typeof useSupabaseServer>,
+): Promise<string | null> {
+  if (colunaForwardedOk) return null
+  const { error } = await supabase.from('messages').select('forwarded').limit(1)
+  if (!error) {
+    colunaForwardedOk = true
+    return null
+  }
+  return error.message
+}
+
 export default defineEventHandler(async (event) => {
   const { messageId, conversationIds } = await readBody<{
     messageId?: string
@@ -26,6 +48,17 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = useSupabaseServer()
+
+  // 0) o hub consegue registrar a cópia? se não, nada é enviado
+  const faltaColuna = await podeRegistrarEncaminhamento(supabase)
+  if (faltaColuna) {
+    console.error('[forward] schema incompleto:', faltaColuna)
+    throw createError({
+      statusCode: 503,
+      statusMessage:
+        'Encaminhamento indisponível: falta rodar a migration que adiciona a coluna messages.forwarded.',
+    })
+  }
 
   // 1) mensagem de origem
   const { data: origem, error: origemErr } = await supabase

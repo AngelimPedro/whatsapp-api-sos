@@ -83,7 +83,10 @@ async function confirmar() {
     emit('fechar')
   } catch (e) {
     console.error('[encaminhar] envio:', e)
-    erro.value = 'Falha ao encaminhar. Tente de novo.'
+    // o servidor recusa antes de enviar quando o schema está incompleto —
+    // mostrar o motivo real evita o operador ficar tentando de novo à toa
+    const msg = (e as { statusMessage?: string })?.statusMessage
+    erro.value = msg || 'Falha ao encaminhar. Tente de novo.'
   } finally {
     enviando.value = false
   }
