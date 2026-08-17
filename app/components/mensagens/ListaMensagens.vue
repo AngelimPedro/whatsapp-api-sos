@@ -8,7 +8,7 @@ const props = defineProps<{
   /** contador que sobe quando o painel reaparece e o scroll precisa voltar pro fim */
   ancorarNoFim?: number
 }>()
-const emit = defineEmits<{ loadOlder: [] }>()
+const emit = defineEmits<{ loadOlder: []; encaminhar: [id: string] }>()
 
 const scrollEl = ref<HTMLElement | null>(null)
 let pendingOlder = false
@@ -117,7 +117,7 @@ onMounted(async () => {
           </span>
         </div>
         <!-- balão -->
-        <ItemMensagem v-else :msg="m" />
+        <ItemMensagem v-else :msg="m" @encaminhar="emit('encaminhar', $event)" />
       </template>
     </div>
   </div>

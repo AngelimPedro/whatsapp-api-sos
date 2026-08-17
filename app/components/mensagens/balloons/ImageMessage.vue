@@ -10,6 +10,7 @@ const out = computed(() => props.msg.from === 'out')
     class="p-0.75 max-w-80 shadow-[0_1px_1px_var(--bubble-shadow)] overflow-hidden"
     :class="out ? 'bubble-out bg-bubble-out text-bubble-out-text' : 'bubble-in bg-bubble-in text-bubble-text'"
   >
+    <EncaminhadaTag v-if="msg.forwarded" class="px-1.5 pt-1" />
     <div class="relative">
       <img
         :src="msg.url"

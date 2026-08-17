@@ -11,6 +11,7 @@ const out = computed(() => props.msg.from === 'out')
     :class="out ? 'bubble-out bg-bubble-out text-bubble-out-text' : 'bubble-in bg-bubble-in text-bubble-text'"
   >
     <div class="px-2.5 pt-1.5 pb-1">
+      <EncaminhadaTag v-if="msg.forwarded" />
       <p class="text-[14.2px] leading-[1.4] whitespace-pre-wrap break-words">{{ msg.text }}</p>
       <MessageMeta :time="msg.time" :status="msg.status" class="mt-1" />
     </div>

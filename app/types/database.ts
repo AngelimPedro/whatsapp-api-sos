@@ -47,6 +47,8 @@ export type MessageRow = {
   status: Status | 'failed' | null
   wa_timestamp: string | null
   created_at: string
+  /** true quando a mensagem veio de um encaminhamento (selo no balão) */
+  forwarded: boolean
 }
 
 export type BlingTokenRow = {

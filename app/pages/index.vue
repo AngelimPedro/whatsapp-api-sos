@@ -122,6 +122,7 @@ function enviarMensagem(text: string) {
         :has-more="hasMoreMensagens"
         :ancorar-no-fim="ancorarNoFim"
         @send="enviarMensagem"
+        @send-file="chat.sendArquivo"
         @load-older="chat.loadOlderMensagens"
         @back="chatAbertoMobile = false"
       />

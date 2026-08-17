@@ -2,8 +2,21 @@
 const icons = useIcons()
 const text = ref('')
 const fieldEl = ref<HTMLTextAreaElement | null>(null)
+const fileEl = ref<HTMLInputElement | null>(null)
 
-const emit = defineEmits<{ send: [text: string] }>()
+const emit = defineEmits<{ send: [text: string]; sendFile: [file: File] }>()
+
+// abre o seletor de arquivos do sistema
+function abrirArquivo() {
+  fileEl.value?.click()
+}
+
+function onArquivo(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) emit('sendFile', file)
+  input.value = '' // permite reenviar o mesmo arquivo depois
+}
 
 const podeEnviar = computed(() => text.value.trim().length > 0)
 
@@ -36,15 +49,14 @@ function enviar() {
       <div
         class="w-full flex items-end gap-2.5 bg-input-bar-bg rounded-[26px] shadow-[0_2px_10px_rgba(11,20,26,0.16)] px-2.5 py-1.5"
       >
+        <!-- anexar arquivo -->
         <button
+          type="button"
           class="w-10 h-10 grid place-items-center rounded-full text-icon hover:bg-hover-row transition-colors shrink-0 [&_svg]:w-5.5 [&_svg]:h-5.5"
+          @click="abrirArquivo"
           v-html="icons.plus"
         />
-        <!-- no mobile a barra fica apertada: o sticker sai pra sobrar largura pro texto -->
-        <button
-          class="hidden md:grid w-10 h-10 place-items-center rounded-full text-icon hover:bg-hover-row transition-colors shrink-0 [&_svg]:w-5.5 [&_svg]:h-5.5"
-          v-html="icons.sticker"
-        />
+        <input ref="fileEl" type="file" class="hidden" @change="onArquivo" />
 
         <!-- 16px no mobile é obrigatório: abaixo disso o Safari do iOS dá zoom
              automático ao focar o campo. No desktop volta pros 15px do layout. -->

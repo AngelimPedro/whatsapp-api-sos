@@ -65,6 +65,8 @@ export interface BaseBalao {
   time?: string
   /** status de entrega (só para 'out') */
   status?: Status
+  /** mensagem recebida por encaminhamento -> mostra o selo "Encaminhada" */
+  forwarded?: boolean
 }
 
 /** Mensagem de texto */

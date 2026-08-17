@@ -16,6 +16,7 @@ const subInfo = computed(() =>
     class="px-2 pt-2 pb-1 max-w-80 shadow-[0_1px_1px_var(--bubble-shadow)]"
     :class="out ? 'bubble-out bg-bubble-out text-bubble-out-text' : 'bubble-in bg-bubble-in text-bubble-text'"
   >
+    <EncaminhadaTag v-if="msg.forwarded" />
     <a
       :href="msg.url"
       target="_blank"
