@@ -1,10 +1,12 @@
+import { sendTextMessage } from '../../utils/datafySend'
+
 /**
  * Envia uma mensagem de texto pela conversa informada.
  * body: { conversationId: string, text: string }
  *
- * Resolve o número/contato pela conversa, envia via Datafy, persiste a
- * mensagem (out, status 'sent') e atualiza a prévia da conversa.
- * O echo/status que voltarem pelo webhook são idempotentes (wa_message_id).
+ * O status da conversa (bot / desqualificado / etc.) NÃO bloqueia o envio
+ * humano. O que a Meta/Datafy bloqueia é a janela de 24h: se o cliente não
+ * mandou nada nesse período, texto livre falha (erro 131047).
  */
 export default defineEventHandler(async (event) => {
   const { conversationId, text } = await readBody<{ conversationId?: string; text?: string }>(event)
@@ -27,7 +29,27 @@ export default defineEventHandler(async (event) => {
   }
 
   // 2) envia via Datafy
-  const waMessageId = await sendTextMessage(conv.phone_number_id, conv.wa_id, text.trim())
+  let waMessageId: string | null = null
+  try {
+    waMessageId = await sendTextMessage(conv.phone_number_id, conv.wa_id, text.trim(), {
+      conversationId: conv.id,
+      source: 'painel',
+    })
+  } catch (err: any) {
+    const parsed = parseDatafySendError(err)
+    console.error('[send] Datafy recusou o envio:', parsed)
+    throw createError({
+      statusCode: parsed.httpStatus,
+      statusMessage: parsed.message,
+    })
+  }
+
+  if (!waMessageId) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: 'A Datafy não devolveu o id da mensagem. O WhatsApp provavelmente não recebeu.',
+    })
+  }
 
   // 3) persiste a mensagem enviada
   const nowIso = new Date().toISOString()
@@ -62,3 +84,37 @@ export default defineEventHandler(async (event) => {
 
   return { ok: true, waMessageId, message: inserted ?? null }
 })
+
+function parseDatafySendError(err: any): { httpStatus: number; message: string } {
+  const data = err?.data ?? err?.response?._data ?? err?.response?.data
+  const graph = data?.error ?? data
+  const code = Number(graph?.code ?? graph?.error_code)
+  const details = String(graph?.error_data?.details || graph?.message || err?.message || '')
+
+  if (code === 131047) {
+    return {
+      httpStatus: 403,
+      message:
+        'Janela de 24h fechada: o WhatsApp só aceita texto livre se o cliente tiver mandado mensagem nas últimas 24 horas. Fora disso é preciso template (HSM).',
+    }
+  }
+
+  if (code === 131026) {
+    return {
+      httpStatus: 400,
+      message: 'Número inválido ou sem WhatsApp. A mensagem não foi entregue.',
+    }
+  }
+
+  if (code === 131056) {
+    return {
+      httpStatus: 429,
+      message: 'Limite de envio para este contato. Aguarde um pouco e tente de novo.',
+    }
+  }
+
+  return {
+    httpStatus: Number(err?.statusCode || err?.status || 502) || 502,
+    message: details || 'Falha ao enviar pela Datafy/WhatsApp.',
+  }
+}

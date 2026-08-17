@@ -58,6 +58,27 @@ export type BlingTokenRow = {
   updated_at: string
 }
 
+export type AuditRow = {
+  id: string
+  created_at: string
+  success: boolean
+  provider: string
+  action: string
+  source: string | null
+  method: string
+  url: string | null
+  http_status: number | null
+  error_code: string | null
+  error_message: string | null
+  conversation_id: string | null
+  phone_number_id: string | null
+  wa_id: string | null
+  wa_message_id: string | null
+  duration_ms: number | null
+  request: Record<string, unknown> | null
+  response: Record<string, unknown> | null
+}
+
 type InsertOf<T> = Partial<T>
 type UpdateOf<T> = Partial<T>
 
@@ -80,6 +101,12 @@ export interface Database {
         Row: BlingTokenRow
         Insert: InsertOf<BlingTokenRow>
         Update: UpdateOf<BlingTokenRow>
+        Relationships: []
+      }
+      audits: {
+        Row: AuditRow
+        Insert: InsertOf<AuditRow>
+        Update: UpdateOf<AuditRow>
         Relationships: []
       }
     }

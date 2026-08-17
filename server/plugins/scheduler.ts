@@ -60,7 +60,10 @@ export default defineNitroPlugin((nitroApp) => {
 
           let wamid: string | null = null
           try {
-            wamid = await sendTextMessage(conv.phone_number_id, conv.wa_id, reminderText)
+            wamid = await sendTextMessage(conv.phone_number_id, conv.wa_id, reminderText, {
+              conversationId: conv.id,
+              source: 'scheduler',
+            })
           } catch (sendErr) {
             console.error(`[scheduler] falha ao enviar WhatsApp para ${conv.wa_id}:`, sendErr)
           }
