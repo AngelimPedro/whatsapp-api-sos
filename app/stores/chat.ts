@@ -320,10 +320,6 @@ export const useChatStore = defineStore('chat', () => {
         })
       }
 
-      // O envio de arquivo não publica no Pusher (depende do echo do webhook,
-      // que nem sempre vem para mídia de saída). Sem isto, o balão só ficava
-      // correto depois de recarregar a página.
-      await syncActive()
     } catch (e) {
       console.error('[chat] envio de arquivo falhou:', e)
       // envio rejeitado: remove o balão otimista p/ não mentir "enviado"
@@ -332,7 +328,13 @@ export const useChatStore = defineStore('chat', () => {
         cache.items = cache.items.filter((m) => !(m.type === 'msg' && m.clientId === clientId))
       }
       if (localUrl) URL.revokeObjectURL(localUrl)
+      return
     }
+
+    // Fora do try acima de propósito: uma falha aqui é de sincronização, não
+    // de envio. Dentro dele, qualquer erro cairia no catch e apagaria o balão
+    // de uma mensagem que o cliente já recebeu.
+    await syncActive()
   }
 
   /* ---------- realtime (Pusher) ---------- */
