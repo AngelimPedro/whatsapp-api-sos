@@ -17,17 +17,28 @@ const emit = defineEmits<{
 }>()
 
 const icons = useIcons()
+const chat = useChatStore()
+
 
 /** id da mensagem em encaminhamento; null = modal fechado */
 const encaminhandoId = ref<string | null>(null)
 const aviso = ref('')
 let avisoTimer: ReturnType<typeof setTimeout> | null = null
 
-function mostraAviso(texto: string) {
+function mostraAviso(texto: string, ms = 3000) {
   aviso.value = texto
   if (avisoTimer) clearTimeout(avisoTimer)
-  avisoTimer = setTimeout(() => (aviso.value = ''), 3000)
+  avisoTimer = setTimeout(() => (aviso.value = ''), ms)
 }
+
+// falha de envio de arquivo vira aviso na tela — antes o balão sumia e o
+// motivo só aparecia no console, então ninguém sabia o que tinha acontecido
+watch(
+  () => chat.erroEnvio,
+  (msg) => {
+    if (msg) mostraAviso(msg, 8000)
+  },
+)
 
 function confirmado(ok: number, falhas = 0) {
   const base = ok === 1 ? 'Mensagem encaminhada' : `Mensagem encaminhada para ${ok} conversas`

@@ -101,6 +101,9 @@ export const useChatStore = defineStore('chat', () => {
   const activeId = ref('')
   let tmpSeq = 0 // sequência p/ ids temporários do envio otimista
 
+  /** Última falha de envio, para a UI mostrar em vez de sumir em silêncio. */
+  const erroEnvio = ref('')
+
   // view da conversa ativa (lê do cache)
   const mensagens = computed<Mensagem[]>(() => msgCache[activeId.value]?.items ?? [])
   const hasMoreMensagens = computed(() => msgCache[activeId.value]?.hasMore ?? false)
@@ -221,10 +224,14 @@ export const useChatStore = defineStore('chat', () => {
   function pushNoCache(conversationId: string, msg: MensagemBalao, waTimestamp?: string | null) {
     const cache = msgCache[conversationId]
     if (!cache) return
-    // dedup por wamid (evita duplicar echo/reentrega do webhook)
-    if (msg.waMessageId && cache.items.some((m) => m.type === 'msg' && m.waMessageId === msg.waMessageId)) {
-      return
-    }
+    // dedup por wamid E por id da linha — mensagens sem wamid (agendador,
+    // localização) escapavam da checagem antiga e entravam duplicadas
+    const jaExiste = cache.items.some(
+      (m) =>
+        m.type === 'msg' &&
+        ((!!msg.waMessageId && m.waMessageId === msg.waMessageId) || (!!msg.id && m.id === msg.id)),
+    )
+    if (jaExiste) return
     cache.items = [...cache.items, msg]
     // avança o marcador do sync incremental (base do ?since=)
     if (waTimestamp && (!cache.lastTs || waTimestamp > cache.lastTs)) cache.lastTs = waTimestamp
@@ -276,10 +283,19 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** Texto legível de um erro de $fetch (statusMessage do servidor quando houver). */
+  function textoDoErro(e: unknown): string {
+    const err = e as { statusMessage?: string; statusCode?: number; message?: string }
+    if (err?.statusMessage) return err.statusMessage
+    if (err?.statusCode) return `Falha no envio (HTTP ${err.statusCode})`
+    return err?.message || 'Falha no envio do arquivo.'
+  }
+
   /** Envia um arquivo anexado pela conversa ativa: balão otimista + upload. */
   async function sendArquivo(file: File, legenda?: string) {
     const id = activeId.value
     if (!id || !file) return
+    erroEnvio.value = ''
 
     const ehImagem = file.type === 'image/jpeg' || file.type === 'image/png'
     const kind: 'image' | 'document' = ehImagem ? 'image' : 'document'
@@ -322,6 +338,7 @@ export const useChatStore = defineStore('chat', () => {
 
     } catch (e) {
       console.error('[chat] envio de arquivo falhou:', e)
+      erroEnvio.value = textoDoErro(e)
       // envio rejeitado: remove o balão otimista p/ não mentir "enviado"
       const cache = msgCache[id]
       if (cache) {
@@ -414,12 +431,26 @@ export const useChatStore = defineStore('chat', () => {
     sincronizando = true
     try {
       const since = cache.lastTs
+      // Sem marcador não dá para pedir "só o que é novo": buscar a primeira
+      // página e ANEXAR duplicaria a conversa inteira. Recarrega substituindo.
+      if (!since) {
+        sincronizando = false
+        await loadFirstMensagens(id)
+        return
+      }
+
       const rows = await $fetch<MessageRow[]>(`/api/conversations/${id}/messages`, {
-        query: since ? { since } : { limit: MSG_PAGE, offset: 0 },
+        query: { since },
       })
       if (!rows.length) return
-      // dedup por wamid contra o que já está no cache
-      const existentes = new Set(
+
+      // Dedup por id da linha E por wamid. Só wamid não bastava: mensagens do
+      // agendador e de localização entram sem wamid, então voltavam a ser
+      // anexadas a cada sync — era o que embaralhava a ordem da conversa.
+      const idsExistentes = new Set(
+        cache.items.filter((m): m is MensagemBalao => m.type === 'msg' && !!m.id).map((m) => m.id!),
+      )
+      const wamidsExistentes = new Set(
         cache.items
           .filter((m): m is MensagemBalao => m.type === 'msg' && !!m.waMessageId)
           .map((m) => m.waMessageId as string),
@@ -428,7 +459,12 @@ export const useChatStore = defineStore('chat', () => {
         .slice()
         .reverse() // DESC -> ordem cronológica
         .map(mapMensagem)
-        .filter((m) => !(m.type === 'msg' && m.waMessageId && existentes.has(m.waMessageId)))
+        .filter((m) => {
+          if (m.type !== 'msg') return true
+          if (m.id && idsExistentes.has(m.id)) return false
+          if (m.waMessageId && wamidsExistentes.has(m.waMessageId)) return false
+          return true
+        })
       if (novos.length) cache.items = [...cache.items, ...novos]
       const maxTs = maxWaTs(rows)
       if (maxTs && (!cache.lastTs || maxTs > cache.lastTs)) cache.lastTs = maxTs
@@ -469,6 +505,7 @@ export const useChatStore = defineStore('chat', () => {
     sendArquivo,
     onRealtimeMessage,
     onRealtimeStatus,
+    erroEnvio,
     syncActive,
     resync,
     aposEncaminhar,
