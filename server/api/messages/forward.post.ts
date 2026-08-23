@@ -1,4 +1,5 @@
 import { sendTextMessage, sendImageMessage, sendMediaMessage, type MediaKind } from '../../utils/datafySend'
+import { claimHumanIfBot } from '../../utils/claimHuman'
 
 /**
  * Encaminha uma mensagem existente para uma ou mais conversas.
@@ -88,7 +89,7 @@ export default defineEventHandler(async (event) => {
   // 2) conversas de destino
   const { data: conversas, error: convErr } = await supabase
     .from('conversations')
-    .select('id, wa_id, phone_number_id, display_phone_number')
+    .select('id, wa_id, phone_number_id, display_phone_number, status')
     .in('id', destinos)
 
   if (convErr) {
@@ -178,14 +179,12 @@ export default defineEventHandler(async (event) => {
         continue
       }
 
-      // 5) prévia/posição da conversa de destino
+      // 5) prévia + se destino estava em bot, assume atendimento humano
       const previa = previewFor(origem.kind, origem.body ?? undefined, origem.caption ?? undefined)
-      const { data: convAtualizada } = await supabase
-        .from('conversations')
-        .update({ last_message_preview: previa, last_message_at: agora })
-        .eq('id', conv.id)
-        .select('*')
-        .single()
+      const convAtualizada = await claimHumanIfBot(supabase, conv.id, conv.status, {
+        last_message_preview: previa,
+        last_message_at: agora,
+      })
 
       // 6) realtime p/ quem estiver com a conversa de destino aberta
       if (convAtualizada) {
