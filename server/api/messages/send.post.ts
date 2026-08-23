@@ -1,4 +1,6 @@
 import { sendTextMessage } from '../../utils/datafySend'
+import { claimHumanIfBot } from '../../utils/claimHuman'
+import { publishNewMessage } from '../../utils/pusherServer'
 
 /**
  * Envia uma mensagem de texto pela conversa informada.
@@ -7,6 +9,9 @@ import { sendTextMessage } from '../../utils/datafySend'
  * O status da conversa (bot / desqualificado / etc.) NÃO bloqueia o envio
  * humano. O que a Meta/Datafy bloqueia é a janela de 24h: se o cliente não
  * mandou nada nesse período, texto livre falha (erro 131047).
+ *
+ * Se a conversa estiver em "bot", o envio humano a move para
+ * "atendimento_humano" e a IA para de responder.
  */
 export default defineEventHandler(async (event) => {
   const { conversationId, text } = await readBody<{ conversationId?: string; text?: string }>(event)
@@ -20,7 +25,7 @@ export default defineEventHandler(async (event) => {
   // 1) dados da conversa (destinatário + inbox)
   const { data: conv, error: convErr } = await supabase
     .from('conversations')
-    .select('id, wa_id, phone_number_id, display_phone_number')
+    .select('id, wa_id, phone_number_id, display_phone_number, status')
     .eq('id', conversationId)
     .single()
 
@@ -76,13 +81,22 @@ export default defineEventHandler(async (event) => {
     console.error('[send] insert message:', insErr.message)
   }
 
-  // 4) atualiza a prévia/posição da conversa
-  await supabase
-    .from('conversations')
-    .update({ last_message_preview: text.trim(), last_message_at: nowIso })
-    .eq('id', conv.id)
+  // 4) prévia + se estava em bot, assume atendimento humano
+  const convAtualizada = await claimHumanIfBot(supabase, conv.id, conv.status, {
+    last_message_preview: text.trim(),
+    last_message_at: nowIso,
+  })
 
-  return { ok: true, waMessageId, message: inserted ?? null }
+  if (convAtualizada && inserted) {
+    await publishNewMessage(convAtualizada, inserted)
+  }
+
+  return {
+    ok: true,
+    waMessageId,
+    message: inserted ?? null,
+    status: convAtualizada?.status ?? conv.status,
+  }
 })
 
 function parseDatafySendError(err: any): { httpStatus: number; message: string } {
