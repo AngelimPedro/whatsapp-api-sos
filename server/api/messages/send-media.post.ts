@@ -98,6 +98,9 @@ export default defineEventHandler(async (event) => {
     console.error('[send-media] insert message:', insErr.message)
   }
 
+  // enviar arquivo também é atendimento humano: tira a conversa do bot
+  await assumirAtendimentoHumano(supabase, conv.id)
+
   // 5) atualiza prévia/posição da conversa
   const preview = kind === 'image' ? caption || '[Imagem]' : `[Arquivo] ${filename}`
   const { data: convAtualizada } = await supabase
