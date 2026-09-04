@@ -1,7 +1,5 @@
 import { sendFileMessage } from '../../utils/datafySend'
 import { resolveMediaUrl } from '../../utils/datafyMedia'
-import { claimHumanIfBot } from '../../utils/claimHuman'
-import { publishNewMessage } from '../../utils/pusherServer'
 
 /**
  * Envia um arquivo anexado no chat (multipart/form-data).
@@ -10,9 +8,6 @@ import { publishNewMessage } from '../../utils/pusherServer'
  * JPEG/PNG são enviados como imagem; qualquer outro tipo vai como documento
  * (preservando o nome do arquivo). Após enviar pela Datafy, resolve a URL
  * pública da mídia para o balão exibir o conteúdo e persiste a mensagem.
- *
- * Se a conversa estiver em "bot", o envio humano a move para
- * "atendimento_humano" e a IA para de responder.
  */
 export default defineEventHandler(async (event) => {
   const parts = await readMultipartFormData(event)
@@ -43,7 +38,7 @@ export default defineEventHandler(async (event) => {
   // 1) dados da conversa (destinatário + inbox)
   const { data: conv, error: convErr } = await supabase
     .from('conversations')
-    .select('id, wa_id, phone_number_id, display_phone_number, status')
+    .select('id, wa_id, phone_number_id, display_phone_number')
     .eq('id', conversationId)
     .single()
 
@@ -60,7 +55,6 @@ export default defineEventHandler(async (event) => {
     mimeType,
     filename,
     caption || undefined,
-    { conversationId: conv.id, source: 'painel' },
   )
 
   // WhatsApp não confirmou a entrega (200 sem wamid) = rejeitado (ex.: fora da
@@ -104,12 +98,17 @@ export default defineEventHandler(async (event) => {
     console.error('[send-media] insert message:', insErr.message)
   }
 
-  // 5) prévia + se estava em bot, assume atendimento humano
+  // enviar arquivo também é atendimento humano: tira a conversa do bot
+  await assumirAtendimentoHumano(supabase, conv.id)
+
+  // 5) atualiza prévia/posição da conversa
   const preview = kind === 'image' ? caption || '[Imagem]' : `[Arquivo] ${filename}`
-  const convAtualizada = await claimHumanIfBot(supabase, conv.id, conv.status, {
-    last_message_preview: preview,
-    last_message_at: nowIso,
-  })
+  const { data: convAtualizada } = await supabase
+    .from('conversations')
+    .update({ last_message_preview: preview, last_message_at: nowIso })
+    .eq('id', conv.id)
+    .select('*')
+    .single()
 
   // 6) realtime: o echo do webhook não é garantido para mídia de saída, então
   // sem publicar aqui as outras abas/atendentes só veriam o arquivo ao recarregar
@@ -117,13 +116,5 @@ export default defineEventHandler(async (event) => {
     await publishNewMessage(convAtualizada, inserted)
   }
 
-  return {
-    ok: true,
-    waMessageId,
-    mediaId,
-    mediaUrl,
-    kind,
-    message: inserted ?? null,
-    status: convAtualizada?.status ?? conv.status,
-  }
+  return { ok: true, waMessageId, mediaId, mediaUrl, kind, message: inserted ?? null }
 })
