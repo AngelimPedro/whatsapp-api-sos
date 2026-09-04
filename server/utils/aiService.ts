@@ -21,6 +21,16 @@ let cachedRegras: RegraIA[] | null = null
 let regrasCacheTimestamp = 0
 const REGRAS_CACHE_MS = 60 * 1000
 
+// Sinal global de pausa da IA (campo `ia_ativa` da API regras-ia). Padrão: ativa
+// — só pausa quando o hub devolver explicitamente false. Atualizado a cada
+// fetch de regras-ia (compartilha o mesmo cache/TTL).
+let cachedIAAtiva = true
+
+/** Só considera desligada quando o valor é explicitamente falso (false/'false'/0/'0'). */
+function normalizaIAAtiva(v: unknown): boolean {
+  return !(v === false || v === 'false' || v === 0 || v === '0')
+}
+
 /**
  * Normaliza texto de categoria para comparação (ex: "0.11" ≈ "011").
  */
@@ -107,10 +117,14 @@ async function getRegrasIA(): Promise<RegraIA[]> {
   try {
     const data = await $fetch<{
       error?: boolean
+      ia_ativa?: boolean | string | number
       results?: { titulo?: string; descricao?: string }[]
     }>('https://hub.soscordasbelem.com.br/api/regras-ia', {
       method: 'GET'
     })
+
+    // sinal de pausa da IA (botão do hub) — lido junto com as regras
+    cachedIAAtiva = normalizaIAAtiva(data?.ia_ativa)
 
     if (data?.results?.length) {
       cachedRegras = data.results
@@ -127,6 +141,16 @@ async function getRegrasIA(): Promise<RegraIA[]> {
   }
 
   return cachedRegras || []
+}
+
+/**
+ * Retorna se a IA está ativa (campo `ia_ativa` da API regras-ia). Reaproveita o
+ * fetch/cache de getRegrasIA (mesmo TTL). Fail-open: se o campo não existir ou a
+ * API falhar, considera ATIVA — o bot só pausa com um `false` explícito do hub.
+ */
+export async function isIAAtiva(): Promise<boolean> {
+  await getRegrasIA()
+  return cachedIAAtiva
 }
 
 /**

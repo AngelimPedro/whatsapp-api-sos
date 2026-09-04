@@ -1,6 +1,6 @@
 import type { ParsedMessage } from '../utils/webhookParser'
 import { sendTextMessage, sendImageMessage } from '../utils/datafySend'
-import { getAIResponse } from '../utils/aiService'
+import { getAIResponse, isIAAtiva } from '../utils/aiService'
 
 /**
  * Webhook da Datafy (formato Meta). Recebe mensagens/echoes/status,
@@ -99,6 +99,16 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
 
   // 5) publica no Pusher pro front atualizar ao vivo
   if (convRow) await publishNewMessage(convRow, inserted)
+
+  // 5.1) Pausa global da IA (botão do hub -> campo ia_ativa da API regras-ia).
+  //      Quando desligada, o bot NÃO gera nenhuma resposta automática (nem o
+  //      gatilho de "resumo do pedido", nem a IA): a mensagem fica salva e
+  //      visível no hub para o atendimento humano assumir. Só afeta conversas
+  //      recebidas ainda no bot — echoes/saídas seguem normais.
+  if (isIncoming && currentStatus === 'bot' && !(await isIAAtiva())) {
+    console.log(`[webhook] IA pausada (ia_ativa=false) — conversa ${conversationId} sem resposta automática`)
+    return
+  }
 
   // 6) Gatilho "resumo do pedido": resposta fixa + handoff definitivo pro humano.
   //    Tratado aqui (e não no prompt da IA) porque o texto e o status precisam ser
