@@ -1,6 +1,6 @@
 import type { ParsedMessage } from '../utils/webhookParser'
 import { sendTextMessage, sendImageMessage } from '../utils/datafySend'
-import { getAIResponse } from '../utils/aiService'
+import { getAIResponse, isIAAtiva } from '../utils/aiService'
 
 /**
  * Webhook da Datafy (formato Meta). Recebe mensagens/echoes/status,
@@ -100,6 +100,16 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
   // 5) publica no Pusher pro front atualizar ao vivo
   if (convRow) await publishNewMessage(convRow, inserted)
 
+  // 5.1) Pausa global da IA (botão do hub -> campo ia_ativa da API regras-ia).
+  //      Quando desligada, o bot NÃO gera nenhuma resposta automática (nem o
+  //      gatilho de "resumo do pedido", nem a IA): a mensagem fica salva e
+  //      visível no hub para o atendimento humano assumir. Só afeta conversas
+  //      recebidas ainda no bot — echoes/saídas seguem normais.
+  if (isIncoming && currentStatus === 'bot' && !(await isIAAtiva())) {
+    console.log(`[webhook] IA pausada (ia_ativa=false) — conversa ${conversationId} sem resposta automática`)
+    return
+  }
+
   // 6) Gatilho "resumo do pedido": resposta fixa + handoff definitivo pro humano.
   //    Tratado aqui (e não no prompt da IA) porque o texto e o status precisam ser
   //    determinísticos. Depois disso a conversa fica em 'pedidos' e nem a IA
@@ -162,15 +172,9 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
 
         try {
           if (msg.type === 'image' && msg.imageUrl) {
-            sentWamid = await sendImageMessage(ev.phoneNumberId, ev.contactWaId, msg.imageUrl, msg.text, {
-              conversationId,
-              source: 'bot',
-            })
+            sentWamid = await sendImageMessage(ev.phoneNumberId, ev.contactWaId, msg.imageUrl, msg.text)
           } else if (msg.type === 'text' && msg.text) {
-            sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text, {
-              conversationId,
-              source: 'bot',
-            })
+            sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text)
           }
         } catch (sendErr) {
           console.error(`[webhook] erro ao enviar mensagem index ${index}:`, sendErr)
@@ -178,10 +182,7 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
           // Se a imagem falhar, tenta pelo menos entregar o texto do produto
           if (msg.type === 'image' && msg.text) {
             try {
-              sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text, {
-                conversationId,
-                source: 'bot',
-              })
+              sentWamid = await sendTextMessage(ev.phoneNumberId, ev.contactWaId, msg.text)
               persistedKind = 'text'
               persistedBody = msg.text
               persistedMediaUrl = null
@@ -285,10 +286,7 @@ async function handleResumoDoPedido(
 
   let wamid: string | null = null
   try {
-    wamid = await sendTextMessage(ev.phoneNumberId!, ev.contactWaId!, RESUMO_PEDIDO_REPLY, {
-      conversationId,
-      source: 'bot',
-    })
+    wamid = await sendTextMessage(ev.phoneNumberId!, ev.contactWaId!, RESUMO_PEDIDO_REPLY)
   } catch (sendErr) {
     console.error('[webhook] erro ao enviar resposta do gatilho de pedido:', sendErr)
   }
