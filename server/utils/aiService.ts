@@ -21,6 +21,16 @@ let cachedRegras: RegraIA[] | null = null
 let regrasCacheTimestamp = 0
 const REGRAS_CACHE_MS = 60 * 1000
 
+// Sinal global de pausa da IA (campo `ia_ativa` da API regras-ia). Padrão: ativa
+// — só pausa quando o hub devolver explicitamente false. Atualizado a cada
+// fetch de regras-ia (compartilha o mesmo cache/TTL).
+let cachedIAAtiva = true
+
+/** Só considera desligada quando o valor é explicitamente falso (false/'false'/0/'0'). */
+function normalizaIAAtiva(v: unknown): boolean {
+  return !(v === false || v === 'false' || v === 0 || v === '0')
+}
+
 /**
  * Normaliza texto de categoria para comparação (ex: "0.11" ≈ "011").
  */
@@ -98,19 +108,23 @@ async function getCategories(): Promise<string[]> {
 /**
  * Busca todas as regras ativas em https://hub.soscordasbelem.com.br/api/regras-ia
  */
-async function getRegrasIA(): Promise<RegraIA[]> {
-  const now = Date.now()
-  if (cachedRegras && (now - regrasCacheTimestamp < REGRAS_CACHE_MS)) {
-    return cachedRegras
-  }
-
+/**
+ * Faz UM fetch da API regras-ia e atualiza os dois caches: as regras (usadas no
+ * prompt) e o sinal `ia_ativa` (pausa do bot). Fail-safe: em erro mantém o que
+ * já estava em cache.
+ */
+async function fetchRegrasIA(): Promise<void> {
   try {
     const data = await $fetch<{
       error?: boolean
+      ia_ativa?: boolean | string | number
       results?: { titulo?: string; descricao?: string }[]
     }>('https://hub.soscordasbelem.com.br/api/regras-ia', {
       method: 'GET'
     })
+
+    // sinal de pausa da IA (botão do hub) — sempre atualizado no fetch
+    cachedIAAtiva = normalizaIAAtiva(data?.ia_ativa)
 
     if (data?.results?.length) {
       cachedRegras = data.results
@@ -119,14 +133,33 @@ async function getRegrasIA(): Promise<RegraIA[]> {
           descricao: String(r.descricao || '').trim()
         }))
         .filter((r) => r.titulo || r.descricao)
-      regrasCacheTimestamp = now
-      return cachedRegras
+      regrasCacheTimestamp = Date.now()
     }
   } catch (err) {
     console.error('[aiService] Erro ao buscar regras-ia:', err)
   }
+}
 
+/** Regras para o prompt — cache de 60s (não precisam ser tempo real). */
+async function getRegrasIA(): Promise<RegraIA[]> {
+  const now = Date.now()
+  if (cachedRegras && (now - regrasCacheTimestamp < REGRAS_CACHE_MS)) {
+    return cachedRegras
+  }
+  await fetchRegrasIA()
   return cachedRegras || []
+}
+
+/**
+ * Sinal de pausa do bot (`ia_ativa`) em TEMPO REAL: relê o hub a cada chamada,
+ * sem cache, porque o valor só importa no instante em que o bot vai responder.
+ * O mesmo fetch já refresca as regras (evita requisição dupla no mesmo request).
+ * Fail-open: se o campo não existir ou a API falhar, considera ATIVA — o bot só
+ * pausa com um `false` explícito do hub.
+ */
+export async function isIAAtiva(): Promise<boolean> {
+  await fetchRegrasIA()
+  return cachedIAAtiva
 }
 
 /**
