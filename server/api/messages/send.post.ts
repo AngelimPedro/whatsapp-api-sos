@@ -54,11 +54,23 @@ export default defineEventHandler(async (event) => {
     console.error('[send] insert message:', insErr.message)
   }
 
-  // 4) atualiza a prévia/posição da conversa
-  await supabase
+  // 4) regra "Atendimento humano iniciado": o atendente respondeu, a IA sai de
+  //    cena. Também é o que impede o agendador de mandar "ainda está por aí?",
+  //    porque ele só olha conversas em 'bot'.
+  await assumirAtendimentoHumano(supabase, conv.id)
+
+  // 5) atualiza a prévia/posição da conversa (já reflete o status novo)
+  const { data: convAtualizada } = await supabase
     .from('conversations')
     .update({ last_message_preview: text.trim(), last_message_at: nowIso })
     .eq('id', conv.id)
+    .select('*')
+    .single()
 
-  return { ok: true, waMessageId, message: inserted ?? null }
+  // 6) realtime: sem isto o selo de status e a aba só mudariam ao recarregar
+  if (convAtualizada && inserted) {
+    await publishNewMessage(convAtualizada, inserted)
+  }
+
+  return { ok: true, waMessageId, message: inserted ?? null, conversation: convAtualizada ?? null }
 })
