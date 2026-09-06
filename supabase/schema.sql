@@ -70,8 +70,37 @@ create table if not exists public.messages (
 create index if not exists idx_messages_conversation
   on public.messages using btree (conversation_id, wa_timestamp);
 
+-- ---------- audits ----------
+create table if not exists public.audits (
+  id                uuid not null default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  success           boolean not null,
+  provider          text not null,
+  action            text not null,
+  source            text null,
+  method            text not null default 'POST',
+  url               text null,
+  http_status       integer null,
+  error_code        text null,
+  error_message     text null,
+  conversation_id   uuid null,
+  phone_number_id   text null,
+  wa_id             text null,
+  wa_message_id     text null,
+  duration_ms       integer null,
+  request           jsonb null,
+  response          jsonb null,
+  constraint audits_pkey primary key (id),
+  constraint audits_conversation_id_fkey
+    foreign key (conversation_id) references public.conversations (id) on delete set null
+);
+
+create index if not exists idx_audits_created_at
+  on public.audits using btree (created_at desc);
+
 -- ---------- RLS ----------
 -- O front NUNCA acessa o banco direto (só o servidor, com a service role que
 -- bypassa a RLS). Habilitamos RLS SEM policies => a chave anon não lê/escreve.
 alter table public.conversations enable row level security;
 alter table public.messages      enable row level security;
+alter table public.audits        enable row level security;

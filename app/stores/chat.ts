@@ -277,9 +277,22 @@ export const useChatStore = defineStore('chat', () => {
           m.type === 'msg' && m.clientId === clientId ? { ...m, waMessageId: wamid } : m,
         )
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('[chat] envio falhou:', e)
-      // TODO: marcar a mensagem otimista como 'failed'
+      const cache = msgCache[id]
+      if (cache) {
+        cache.items = cache.items.filter(
+          (m) => !(m.type === 'msg' && m.clientId === clientId),
+        )
+      }
+      const msg =
+        e?.statusMessage ||
+        e?.data?.statusMessage ||
+        e?.message ||
+        'Falha ao enviar a mensagem pelo WhatsApp.'
+      if (import.meta.client) {
+        window.alert(msg)
+      }
     }
   }
 

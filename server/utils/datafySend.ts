@@ -1,15 +1,26 @@
-import sharp from 'sharp'
+import sharp from "sharp";
+import { extractFetchError, recordAudit, type SendAuditMeta } from "./audit";
 
 interface SendResponse {
-  messages?: { id: string }[]
-  contacts?: { wa_id: string }[]
+  messages?: { id: string }[];
+  contacts?: { wa_id: string }[];
 }
 
 interface MediaUploadResponse {
-  id?: string
+  id?: string;
 }
 
-const WHATSAPP_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/jpg'])
+export type MediaKind = "audio" | "video" | "document" | "sticker";
+
+const MEDIA_DEFAULTS: Record<
+  MediaKind,
+  { mimeType: string; filename: string }
+> = {
+  audio: { mimeType: "audio/ogg", filename: "audio.ogg" },
+  video: { mimeType: "video/mp4", filename: "video.mp4" },
+  document: { mimeType: "application/octet-stream", filename: "arquivo" },
+  sticker: { mimeType: "image/webp", filename: "sticker.webp" },
+};
 
 /**
  * Envia mensagem de texto via Datafy (padrão Cloud API):
@@ -21,28 +32,67 @@ export async function sendTextMessage(
   phoneNumberId: string,
   to: string,
   text: string,
+  meta?: SendAuditMeta,
 ): Promise<string | null> {
-  const { base, token } = getDatafyConfig()
+  const { base, token } = getDatafyConfig();
+  const url = `${base}/v1/${phoneNumberId}/messages`;
+  const started = Date.now();
+  const request = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "text",
+    text: { body: text },
+  };
 
-  const res = await $fetch<SendResponse>(`${base}/v1/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'text',
-      text: { body: text },
-    },
-  })
+  try {
+    const res = await $fetch<SendResponse>(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: request,
+    });
 
-  const wamid = res?.messages?.[0]?.id ?? null
-  if (!wamid) {
-    // 200 sem wamid = WhatsApp não aceitou (ex.: fora da janela de 24h,
-    // número inválido). Loga a resposta crua para revelar o motivo real.
-    console.warn(`[datafySend] texto p/ ${to} sem wamid na resposta:`, JSON.stringify(res))
+    const waMessageId = res?.messages?.[0]?.id ?? null;
+    recordAudit({
+      success: Boolean(waMessageId),
+      provider: "datafy",
+      action: "send_text",
+      source: meta?.source,
+      method: "POST",
+      url,
+      http_status: 200,
+      error_message: waMessageId ? null : "Resposta sem wamid",
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      wa_message_id: waMessageId,
+      duration_ms: Date.now() - started,
+      request: { to, type: "text", text },
+      response: res,
+    });
+
+    return waMessageId;
+  } catch (err: any) {
+    const parsed = extractFetchError(err);
+    recordAudit({
+      success: false,
+      provider: "datafy",
+      action: "send_text",
+      source: meta?.source,
+      method: "POST",
+      url,
+      http_status: parsed.http_status,
+      error_code: parsed.error_code,
+      error_message: parsed.error_message,
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      duration_ms: Date.now() - started,
+      request: { to, type: "text", text },
+      response: parsed.response,
+    });
+    throw err;
   }
-  return wamid
 }
 
 /**
@@ -56,99 +106,94 @@ export async function sendImageMessage(
   phoneNumberId: string,
   to: string,
   imageUrl: string,
-  caption?: string
+  caption?: string,
+  meta?: SendAuditMeta,
 ): Promise<string | null> {
-  const { base, token } = getDatafyConfig()
+  const { base, token } = getDatafyConfig();
+  const url = `${base}/v1/${phoneNumberId}/messages`;
+  const started = Date.now();
+  const captionText =
+    typeof caption === "string" && caption.trim()
+      ? caption.trim().slice(0, 1024)
+      : undefined;
 
   if (!imageUrl?.trim()) {
-    throw new Error('URL da imagem vazia')
+    throw new Error("URL da imagem vazia");
   }
 
-  const prepared = await prepareImageForWhatsApp(imageUrl)
-  const mediaId = await uploadMedia(phoneNumberId, prepared.buffer, prepared.mimeType, prepared.filename)
+  const prepared = await prepareImageForWhatsApp(imageUrl);
+  const mediaId = await uploadMedia(
+    phoneNumberId,
+    prepared.buffer,
+    prepared.mimeType,
+    prepared.filename,
+    meta,
+  );
 
-  const res = await $fetch<SendResponse>(`${base}/v1/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'image',
-      image: {
-        id: mediaId,
-        ...(caption ? { caption } : {})
+  try {
+    const res = await $fetch<SendResponse>(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "image",
+        image: {
+          id: mediaId,
+          ...(captionText ? { caption: captionText } : {}),
+        },
       },
-    },
-  })
+    });
 
-  const wamid = res?.messages?.[0]?.id ?? null
-  if (!wamid) console.warn(`[datafySend] imagem p/ ${to} sem wamid na resposta:`, JSON.stringify(res))
-  return wamid
-}
+    const waMessageId = res?.messages?.[0]?.id ?? null;
+    recordAudit({
+      success: Boolean(waMessageId),
+      provider: "datafy",
+      action: "send_image",
+      source: meta?.source,
+      method: "POST",
+      url,
+      http_status: 200,
+      error_message: waMessageId ? null : "Resposta sem wamid",
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      wa_message_id: waMessageId,
+      duration_ms: Date.now() - started,
+      request: { to, type: "image", imageUrl, caption: captionText, mediaId },
+      response: res,
+    });
 
-/** Tipos de mídia que o encaminhamento sabe reenviar (imagem tem caminho próprio). */
-export type MediaKind = 'audio' | 'video' | 'document' | 'sticker'
-
-/**
- * Reenvia uma mídia a partir da URL já resolvida (media_url da mensagem
- * original). Baixa, sobe de novo como mídia nova e envia pelo media id —
- * o id da mídia recebida não é reutilizável para envio.
- */
-export async function sendMediaMessage(
-  phoneNumberId: string,
-  to: string,
-  kind: MediaKind,
-  mediaUrl: string,
-  caption?: string,
-  filename?: string,
-): Promise<string | null> {
-  const { base, token } = getDatafyConfig()
-
-  if (!mediaUrl?.trim()) {
-    throw new Error('URL da mídia vazia')
+    return waMessageId;
+  } catch (err: any) {
+    const parsed = extractFetchError(err);
+    recordAudit({
+      success: false,
+      provider: "datafy",
+      action: "send_image",
+      source: meta?.source,
+      method: "POST",
+      url,
+      http_status: parsed.http_status,
+      error_code: parsed.error_code,
+      error_message: parsed.error_message,
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      duration_ms: Date.now() - started,
+      request: { to, type: "image", imageUrl, caption: captionText, mediaId },
+      response: parsed.response,
+    });
+    console.error("[datafySend] falha ao enviar imagem:", parsed);
+    throw err;
   }
-
-  const response = await fetch(mediaUrl)
-  if (!response.ok) {
-    throw new Error(`Falha ao baixar mídia (${response.status}): ${mediaUrl}`)
-  }
-  const mimeType =
-    (response.headers.get('content-type') || '').split(';')[0]!.trim() || 'application/octet-stream'
-  const buffer = Buffer.from(await response.arrayBuffer())
-
-  const mediaId = await uploadMedia(phoneNumberId, buffer, mimeType, filename || 'arquivo')
-
-  // sticker e audio não aceitam caption na Cloud API
-  const aceitaCaption = kind === 'video' || kind === 'document'
-  const payload: Record<string, unknown> = { id: mediaId }
-  if (aceitaCaption && caption) payload.caption = caption
-  if (kind === 'document' && filename) payload.filename = filename
-
-  const res = await $fetch<SendResponse>(`${base}/v1/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: kind,
-      [kind]: payload,
-    },
-  })
-
-  const wamid = res?.messages?.[0]?.id ?? null
-  if (!wamid) console.warn(`[datafySend] mídia (${kind}) p/ ${to} sem wamid na resposta:`, JSON.stringify(res))
-  return wamid
 }
 
 /**
- * Envia um arquivo que o usuário anexou no chat (buffer em memória): faz o
- * upload da mídia e dispara a mensagem pelo media id. Retorna o wamid e o
- * media id (usado depois para resolver a URL pública e exibir o balão).
- *
- * kind: 'image' só para JPEG/PNG (exigência do WhatsApp); qualquer outro
- * arquivo vai como 'document', preservando o nome original.
+ * Envia um arquivo já em memória (anexo do painel).
+ * JPEG/PNG vão como imagem; qualquer outro tipo como documento.
+ * Retorna wamid + mediaId para o hub persistir e resolver a URL pública.
  */
 export async function sendFileMessage(
   phoneNumberId: string,
@@ -158,90 +203,303 @@ export async function sendFileMessage(
   mimeType: string,
   filename: string,
   caption?: string,
+  meta?: SendAuditMeta,
 ): Promise<{ waMessageId: string | null; mediaId: string }> {
   const { base, token } = getDatafyConfig()
+  const url = `${base}/v1/${phoneNumberId}/messages`
+  const started = Date.now()
+  const captionText =
+    typeof caption === 'string' && caption.trim() ? caption.trim().slice(0, 1024) : undefined
 
-  const mediaId = await uploadMedia(phoneNumberId, buffer, mimeType, filename)
+  let uploadBuffer = buffer
+  let uploadMime = mimeType || 'application/octet-stream'
+  let uploadName = filename || 'arquivo'
+
+  if (kind === 'image') {
+    const jpegBuffer = await sharp(buffer)
+      .rotate()
+      .jpeg({ quality: 85, mozjpeg: true })
+      .toBuffer()
+    uploadBuffer = jpegBuffer
+    uploadMime = 'image/jpeg'
+    uploadName = uploadName.replace(/\.[^.]+$/, '') + '.jpg'
+  }
+
+  const mediaId = await uploadMedia(phoneNumberId, uploadBuffer, uploadMime, uploadName, meta)
 
   const payload: Record<string, unknown> = { id: mediaId }
-  if (caption) payload.caption = caption
-  if (kind === 'document') payload.filename = filename
+  if (captionText) payload.caption = captionText
+  if (kind === 'document') payload.filename = uploadName
 
-  const res = await $fetch<SendResponse>(`${base}/v1/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: kind,
-      [kind]: payload,
+  try {
+    const res = await $fetch<SendResponse>(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: kind,
+        [kind]: payload,
+      },
+    })
+
+    const waMessageId = res?.messages?.[0]?.id ?? null
+    recordAudit({
+      success: Boolean(waMessageId),
+      provider: 'datafy',
+      action: `send_file_${kind}`,
+      source: meta?.source ?? 'painel',
+      method: 'POST',
+      url,
+      http_status: 200,
+      error_message: waMessageId ? null : 'Resposta sem wamid',
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      wa_message_id: waMessageId,
+      duration_ms: Date.now() - started,
+      request: { to, type: kind, filename: uploadName, mimeType: uploadMime, caption: captionText },
+      response: res,
+    })
+
+    return { waMessageId, mediaId }
+  } catch (err: any) {
+    const parsed = extractFetchError(err)
+    recordAudit({
+      success: false,
+      provider: 'datafy',
+      action: `send_file_${kind}`,
+      source: meta?.source ?? 'painel',
+      method: 'POST',
+      url,
+      http_status: parsed.http_status,
+      error_code: parsed.error_code,
+      error_message: parsed.error_message,
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      duration_ms: Date.now() - started,
+      request: { to, type: kind, filename: uploadName, mimeType: uploadMime, caption: captionText },
+      response: parsed.response,
+    })
+    console.error('[datafySend] falha ao enviar arquivo:', parsed)
+    throw err
+  }
+}
+
+/**
+ * Reenvia áudio, vídeo, documento ou sticker a partir de uma URL pública.
+ * Usado no encaminhamento: baixa o arquivo, faz upload na Datafy e envia
+ * pelo media id (o id original da mensagem recebida não serve para envio).
+ */
+export async function sendMediaMessage(
+  phoneNumberId: string,
+  to: string,
+  kind: MediaKind,
+  mediaUrl: string,
+  caption?: string,
+  filename?: string,
+  meta?: SendAuditMeta,
+): Promise<string | null> {
+  const { base, token } = getDatafyConfig();
+  const url = `${base}/v1/${phoneNumberId}/messages`;
+  const started = Date.now();
+  const captionText =
+    typeof caption === "string" && caption.trim()
+      ? caption.trim().slice(0, 1024)
+      : undefined;
+
+  if (!mediaUrl?.trim()) {
+    throw new Error("URL da mídia vazia");
+  }
+
+  const downloaded = await downloadMedia(mediaUrl, kind, filename);
+  const mediaId = await uploadMedia(
+    phoneNumberId,
+    downloaded.buffer,
+    downloaded.mimeType,
+    downloaded.filename,
+    meta,
+  );
+
+  const payload = buildMediaPayload(
+    kind,
+    mediaId,
+    captionText,
+    downloaded.filename,
+  );
+
+  try {
+    const res = await $fetch<SendResponse>(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: kind,
+        ...payload,
+      },
+    });
+
+    const waMessageId = res?.messages?.[0]?.id ?? null;
+    recordAudit({
+      success: Boolean(waMessageId),
+      provider: "datafy",
+      action: `send_${kind}`,
+      source: meta?.source,
+      method: "POST",
+      url,
+      http_status: 200,
+      error_message: waMessageId ? null : "Resposta sem wamid",
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      wa_message_id: waMessageId,
+      duration_ms: Date.now() - started,
+      request: {
+        to,
+        type: kind,
+        mediaUrl,
+        caption: captionText,
+        filename: downloaded.filename,
+      },
+      response: res,
+    });
+
+    return waMessageId;
+  } catch (err: any) {
+    const parsed = extractFetchError(err);
+    recordAudit({
+      success: false,
+      provider: "datafy",
+      action: `send_${kind}`,
+      source: meta?.source,
+      method: "POST",
+      url,
+      http_status: parsed.http_status,
+      error_code: parsed.error_code,
+      error_message: parsed.error_message,
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      wa_id: to,
+      duration_ms: Date.now() - started,
+      request: {
+        to,
+        type: kind,
+        mediaUrl,
+        caption: captionText,
+        filename: downloaded.filename,
+      },
+      response: parsed.response,
+    });
+    console.error(`[datafySend] falha ao enviar ${kind}:`, parsed);
+    throw err;
+  }
+}
+
+function buildMediaPayload(
+  kind: MediaKind,
+  mediaId: string,
+  caption?: string,
+  filename?: string,
+): Record<string, unknown> {
+  if (kind === "audio") {
+    return { audio: { id: mediaId } };
+  }
+  if (kind === "sticker") {
+    return { sticker: { id: mediaId } };
+  }
+  if (kind === "video") {
+    return { video: { id: mediaId, ...(caption ? { caption } : {}) } };
+  }
+  return {
+    document: {
+      id: mediaId,
+      ...(caption ? { caption } : {}),
+      ...(filename ? { filename } : {}),
     },
-  })
+  };
+}
 
-  const wamid = res?.messages?.[0]?.id ?? null
-  if (!wamid) console.warn(`[datafySend] arquivo (${kind}) p/ ${to} sem wamid na resposta:`, JSON.stringify(res))
-  return { waMessageId: wamid, mediaId }
+async function downloadMedia(
+  mediaUrl: string,
+  kind: MediaKind,
+  filenameHint?: string,
+): Promise<{ buffer: Buffer; mimeType: string; filename: string }> {
+  const response = await fetch(mediaUrl);
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar mídia (${response.status}): ${mediaUrl}`);
+  }
+
+  const fallback = MEDIA_DEFAULTS[kind];
+  const sourceType = (response.headers.get("content-type") || "")
+    .split(";")[0]
+    ?.trim()
+    .toLowerCase();
+  const mimeType = sourceType || fallback.mimeType;
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const fromUrl = mediaUrl.split("/").pop()?.split("?")[0];
+  const filename = filenameHint?.trim() || fromUrl || fallback.filename;
+
+  return { buffer, mimeType, filename };
 }
 
 function getDatafyConfig(): { base: string; token: string } {
-  const config = useRuntimeConfig()
-  const base = config.datafyApiUrl as string
-  const token = config.datafyNumberToken as string
+  const config = useRuntimeConfig();
+  const base = config.datafyApiUrl as string;
+  const token = config.datafyNumberToken as string;
 
   if (!base || !token) {
     throw createError({
       statusCode: 500,
-      statusMessage: 'Datafy não configurado (DATAFY_API_URL / DATAFY_NUMBER_TOKEN).',
-    })
+      statusMessage:
+        "Datafy não configurado (DATAFY_API_URL / DATAFY_NUMBER_TOKEN).",
+    });
   }
 
-  return { base, token }
+  return { base, token };
 }
 
 /**
  * Baixa a imagem e garante JPEG/PNG compatível com WhatsApp.
  */
 async function prepareImageForWhatsApp(imageUrl: string): Promise<{
-  buffer: Buffer
-  mimeType: 'image/jpeg' | 'image/png'
-  filename: string
+  buffer: Buffer;
+  mimeType: "image/jpeg" | "image/png";
+  filename: string;
 }> {
-  const response = await fetch(imageUrl)
+  const response = await fetch(imageUrl);
   if (!response.ok) {
-    throw new Error(`Falha ao baixar imagem (${response.status}): ${imageUrl}`)
+    throw new Error(`Falha ao baixar imagem (${response.status}): ${imageUrl}`);
   }
 
-  const sourceType = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
-  const arrayBuffer = await response.arrayBuffer()
-  const sourceBuffer = Buffer.from(arrayBuffer)
+  const sourceType = (response.headers.get("content-type") || "")
+    .split(";")[0]
+    ?.trim()
+    .toLowerCase();
+  const arrayBuffer = await response.arrayBuffer();
+  const sourceBuffer = Buffer.from(arrayBuffer);
 
-  const looksWebp =
-    sourceType === 'image/webp' ||
-    imageUrl.toLowerCase().includes('.webp')
-
-  if (!looksWebp && WHATSAPP_IMAGE_TYPES.has(sourceType)) {
-    const mimeType = sourceType === 'image/png' ? 'image/png' : 'image/jpeg'
-    return {
-      buffer: sourceBuffer,
-      mimeType,
-      filename: mimeType === 'image/png' ? 'product.png' : 'product.jpg',
-    }
-  }
-
-  // Converte webp (e qualquer outro formato) para JPEG
+  // WhatsApp só aceita JPEG/PNG 8-bit. Convertimos tudo para JPEG
+  // (webp, png com perfil estranho, etc.) para evitar erro 131053.
   const jpegBuffer = await sharp(sourceBuffer)
     .rotate()
     .jpeg({ quality: 85, mozjpeg: true })
-    .toBuffer()
+    .toBuffer();
 
-  console.log(`[datafySend] imagem convertida para JPEG (${sourceType || 'desconhecido'} → image/jpeg), ${jpegBuffer.length} bytes`)
+  console.log(
+    `[datafySend] imagem convertida para JPEG (${sourceType || "desconhecido"} → image/jpeg), ${jpegBuffer.length} bytes`,
+  );
 
   return {
     buffer: jpegBuffer,
-    mimeType: 'image/jpeg',
-    filename: 'product.jpg',
-  }
+    mimeType: "image/jpeg",
+    filename: "product.jpg",
+  };
 }
 
 /**
@@ -251,37 +509,105 @@ async function uploadMedia(
   phoneNumberId: string,
   buffer: Buffer,
   mimeType: string,
-  filename: string
+  filename: string,
+  meta?: SendAuditMeta,
 ): Promise<string> {
-  const { base, token } = getDatafyConfig()
+  const { base, token } = getDatafyConfig();
+  const url = `${base}/v1/${phoneNumberId}/media`;
+  const started = Date.now();
 
-  const form = new FormData()
-  form.append('messaging_product', 'whatsapp')
-  form.append('type', mimeType)
-  form.append('file', new Blob([new Uint8Array(buffer)], { type: mimeType }), filename)
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", mimeType);
+  form.append(
+    "file",
+    new Blob([new Uint8Array(buffer)], { type: mimeType }),
+    filename,
+  );
 
   // fetch nativo: $fetch/ofetch às vezes quebra o boundary do multipart
-  const uploadRes = await fetch(`${base}/v1/${phoneNumberId}/media`, {
-    method: 'POST',
+  const uploadRes = await fetch(url, {
+    method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: form,
-  })
+  });
 
-  const raw = await uploadRes.text()
+  const raw = await uploadRes.text();
   if (!uploadRes.ok) {
-    throw new Error(`Upload de mídia falhou (${uploadRes.status}): ${raw}`)
+    recordAudit({
+      success: false,
+      provider: "datafy",
+      action: "upload_media",
+      source: meta?.source,
+      method: "POST",
+      url,
+      http_status: uploadRes.status,
+      error_message: raw.slice(0, 2000),
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      duration_ms: Date.now() - started,
+      request: { mimeType, filename, bytes: buffer.length },
+      response: raw,
+    });
+    throw new Error(`Upload de mídia falhou (${uploadRes.status}): ${raw}`);
   }
 
-  let res: MediaUploadResponse
+  let res: MediaUploadResponse;
   try {
-    res = JSON.parse(raw)
+    res = JSON.parse(raw);
   } catch {
-    throw new Error(`Upload de mídia retornou JSON inválido: ${raw}`)
+    recordAudit({
+      success: false,
+      provider: "datafy",
+      action: "upload_media",
+      source: meta?.source,
+      method: "POST",
+      url,
+      http_status: uploadRes.status,
+      error_message: "JSON inválido no upload de mídia",
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      duration_ms: Date.now() - started,
+      request: { mimeType, filename, bytes: buffer.length },
+      response: raw,
+    });
+    throw new Error(`Upload de mídia retornou JSON inválido: ${raw}`);
   }
 
-  if (!res?.id) {
-    throw new Error(`Upload de mídia sem id na resposta: ${raw}`)
+  const mediaId = res?.id || (res as any)?.media_id || (res as any)?.data?.id;
+  if (!mediaId) {
+    recordAudit({
+      success: false,
+      provider: "datafy",
+      action: "upload_media",
+      source: meta?.source,
+      method: "POST",
+      url,
+      http_status: uploadRes.status,
+      error_message: "Upload de mídia sem id na resposta",
+      conversation_id: meta?.conversationId,
+      phone_number_id: phoneNumberId,
+      duration_ms: Date.now() - started,
+      request: { mimeType, filename, bytes: buffer.length },
+      response: res,
+    });
+    throw new Error(`Upload de mídia sem id na resposta: ${raw}`);
   }
 
-  return res.id
+  recordAudit({
+    success: true,
+    provider: "datafy",
+    action: "upload_media",
+    source: meta?.source,
+    method: "POST",
+    url,
+    http_status: uploadRes.status,
+    conversation_id: meta?.conversationId,
+    phone_number_id: phoneNumberId,
+    duration_ms: Date.now() - started,
+    request: { mimeType, filename, bytes: buffer.length },
+    response: { id: mediaId },
+  });
+
+  return String(mediaId);
 }
