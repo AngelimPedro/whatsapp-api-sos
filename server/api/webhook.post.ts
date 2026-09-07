@@ -1,6 +1,7 @@
 import type { ParsedMessage } from '../utils/webhookParser'
 import { sendTextMessage, sendImageMessage } from '../utils/datafySend'
 import { getAIResponse, isIAAtiva } from '../utils/aiService'
+import { claimHumanIfBot } from '../utils/claimHuman'
 
 /**
  * Webhook da Datafy (formato Meta). Recebe mensagens/echoes/status,
@@ -90,12 +91,17 @@ async function persistMessage(supabase: ReturnType<typeof useSupabaseServer>, ev
     updateData.reminder_sent = false
   }
 
-  const { data: convRow } = await supabase
-    .from('conversations')
-    .update(updateData)
-    .eq('id', conversationId)
-    .select('*')
-    .single()
+  // Echo de SAÍDA com wa_message_id inédito = mensagem que não passou pelo hub
+  // nem pelo bot (ambos já gravaram a linha antes do echo chegar, e nesse caso
+  // `inserted` viria null). Ou seja: o atendente respondeu pelo WhatsApp do
+  // celular. Sem assumir o atendimento aqui, a conversa seguia em 'bot' e o
+  // agendador mandava "ainda está por aí?" por cima de um atendimento humano.
+  const convRow = await claimHumanIfBot(
+    supabase,
+    conversationId,
+    isIncoming ? null : currentStatus,
+    updateData,
+  )
 
   // 5) publica no Pusher pro front atualizar ao vivo
   if (convRow) await publishNewMessage(convRow, inserted)
